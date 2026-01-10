@@ -1,0 +1,37 @@
+{
+  "name": "aysnc/llm-eval",
+  "description": "Simple LLM evaluation framework for PHP.",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Aysnc",
+      "homepage": "https://aysnc.dev"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Aysnc\\AI\\LlmEval\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Aysnc\\AI\\LlmEval\\Tests\\": "tests"
+    }
+  },
+  "require": {
+    "php": "^8.3",
+    "guzzlehttp/guzzle": "^7.10"
+  },
+  "require-dev": {
+    "phpstan/phpstan": "^2.1",
+    "phpunit/phpunit": "^11.0",
+    "friendsofphp/php-cs-fixer": "^3.92"
+  },
+  "scripts": {
+    "test": "phpunit",
+    "format": "php-cs-fixer fix",
+    "format:check": "php-cs-fixer fix --dry-run --diff",
+    "static-analysis": "phpstan analyse -c phpstan.neon --memory-limit=512M"
+  }
+}

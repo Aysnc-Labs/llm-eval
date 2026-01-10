@@ -1,0 +1,20 @@
+# --- Windows and Mac files
+[Tt]humbs.db
+.DS_Store
+
+# --- Root
+/*
+!.github
+!src
+!tests
+!.editorconfig
+!.gitattributes
+!.gitignore
+!composer.json
+!composer.lock
+!.php-cs-fixer.dist.php
+!phpstan.neon
+!phpunit.xml
+!CONTRIBUTING.md
+!LICENSE
+!README.md
