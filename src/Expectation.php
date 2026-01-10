@@ -13,10 +13,12 @@ namespace Aysnc\AI\LlmEval;
 use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
 use Aysnc\AI\LlmEval\Assertions\Contains;
 use Aysnc\AI\LlmEval\Assertions\IsJson;
+use Aysnc\AI\LlmEval\Assertions\JudgedBy;
 use Aysnc\AI\LlmEval\Assertions\MatchesRegex;
 use Aysnc\AI\LlmEval\Assertions\MaxLength;
 use Aysnc\AI\LlmEval\Assertions\MinLength;
 use Aysnc\AI\LlmEval\Assertions\NotContains;
+use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 
 /**
  * Fluent builder for adding assertions to an evaluation.
@@ -107,6 +109,25 @@ class Expectation
     public function assert(AssertionInterface $assertion): self
     {
         $this->assertions[] = $assertion;
+
+        return $this;
+    }
+
+    /**
+     * Use an LLM to judge the response against criteria.
+     *
+     * @param ProviderInterface $judge The LLM provider to use as judge.
+     * @param string $criteria The criteria to evaluate against (e.g., "Is this helpful?").
+     * @param float $threshold Minimum score to pass (0.0 to 1.0, default 0.7).
+     * @param string|null $model Optional model override for the judge.
+     */
+    public function judgedBy(
+        ProviderInterface $judge,
+        string $criteria,
+        float $threshold = 0.7,
+        ?string $model = null,
+    ): self {
+        $this->assertions[] = new JudgedBy($judge, $criteria, $threshold, $model);
 
         return $this;
     }

@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace Aysnc\AI\LlmEval;
 
 use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
+use Aysnc\AI\LlmEval\Assertions\JudgedBy;
 use Aysnc\AI\LlmEval\Dataset\Dataset;
 use Aysnc\AI\LlmEval\Dataset\TestCase;
 use Aysnc\AI\LlmEval\Providers\ProviderInterface;
@@ -191,6 +192,11 @@ class LlmEval
 
         $assertionResults = [];
         foreach ($assertions as $assertion) {
+            // Inject original prompt into JudgedBy assertions for context
+            if ($assertion instanceof JudgedBy && $this->prompt !== null) {
+                $assertion = $assertion->withOriginalPrompt($this->prompt);
+            }
+
             $assertionResults[] = $assertion->check($response->text);
         }
 
