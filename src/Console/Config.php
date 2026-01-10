@@ -21,7 +21,7 @@ use RuntimeException;
  * Configuration options:
  *   - provider: Default ProviderInterface to use
  *   - directory: Directory containing eval files (default: 'evals')
- *   - cache: Cache directory path (optional, wraps provider with caching)
+ *   - cache: true (use .llm-cache), string (custom path), or false (disabled)
  *   - parallel: Whether to run in parallel by default (default: false)
  *   - concurrency: Max concurrent requests when parallel (default: 0 = unlimited)
  */
@@ -89,10 +89,17 @@ class Config
             $this->directory = rtrim($workingDir, '/') . '/evals';
         }
 
-        if (isset($data['cache']) && is_string($data['cache'])) {
-            $this->cache = str_starts_with($data['cache'], '/')
-                ? $data['cache']
-                : rtrim($workingDir, '/') . '/' . $data['cache'];
+        if (isset($data['cache'])) {
+            if ($data['cache'] === true) {
+                // Boolean true = use default cache directory
+                $this->cache = rtrim($workingDir, '/') . '/.llm-cache';
+            } elseif (is_string($data['cache'])) {
+                // String = custom cache path
+                $this->cache = str_starts_with($data['cache'], '/')
+                    ? $data['cache']
+                    : rtrim($workingDir, '/') . '/' . $data['cache'];
+            }
+            // false or other = no caching
         }
 
         if (isset($data['parallel']) && is_bool($data['parallel'])) {
