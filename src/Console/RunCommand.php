@@ -28,13 +28,14 @@ use Throwable;
  * Run evaluations from the command line.
  *
  * Usage:
- *   llm-eval run eval.php
- *   llm-eval run eval.php --parallel
+ *   llm-eval run                     # Run all evals from llm-eval.php config
+ *   llm-eval run eval.php            # Run specific file
+ *   llm-eval run --parallel          # Run all evals in parallel
  *   llm-eval run eval.php --format=json
  */
 #[AsCommand(
     name: 'run',
-    description: 'Run an evaluation file',
+    description: 'Run evaluation file(s)',
 )]
 class RunCommand extends Command
 {
@@ -42,7 +43,7 @@ class RunCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addArgument('file', InputArgument::REQUIRED, 'The evaluation file to run')
+            ->addArgument('file', InputArgument::OPTIONAL, 'The evaluation file to run (omit to run all from config)')
             ->addOption('parallel', 'p', InputOption::VALUE_NONE, 'Run evaluations in parallel')
             ->addOption('concurrency', 'c', InputOption::VALUE_REQUIRED, 'Max concurrent requests (with --parallel)', '0')
             ->addOption('format', 'f', InputOption::VALUE_REQUIRED, 'Output format (text, json)', 'text');
@@ -53,57 +54,109 @@ class RunCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $file = $input->getArgument('file');
+        $workingDir = (string) getcwd();
 
-        if (!is_string($file)) {
-            $io->error('File argument must be a string');
+        // Load config
+        $config = Config::load($workingDir);
 
-            return Command::FAILURE;
-        }
+        // Determine which files to run
+        if (is_string($file) && $file !== '') {
+            // Specific file provided
+            if (!file_exists($file)) {
+                $io->error("Evaluation file not found: {$file}");
 
-        if (!file_exists($file)) {
-            $io->error("Evaluation file not found: {$file}");
+                return Command::FAILURE;
+            }
+            $evalFiles = [$file];
+        } else {
+            // No file - discover from config
+            if (!Config::exists($workingDir)) {
+                $io->error('No file specified and no llm-eval.php config found.');
+                $io->text('Either provide a file: <info>llm-eval run myeval.php</info>');
+                $io->text('Or create a config: <info>llm-eval init --config</info>');
 
-            return Command::FAILURE;
+                return Command::FAILURE;
+            }
+
+            $evalFiles = $config->discoverEvalFiles();
+
+            if (count($evalFiles) === 0) {
+                $io->error("No eval files found in: {$config->getDirectory()}");
+
+                return Command::FAILURE;
+            }
         }
 
         $io->title('LLM-Eval Runner');
+        $io->text(sprintf('Found <info>%d</info> eval file(s)', count($evalFiles)));
 
-        // Load the evaluation file
-        $eval = $this->loadEvaluationFile($file);
-
-        if ($eval === null) {
-            $io->error('Evaluation file must return an LlmEval instance');
-
-            return Command::FAILURE;
-        }
-
-        // Run the evaluation
-        $parallel = (bool) $input->getOption('parallel');
+        // Parse options (CLI flags override config)
+        $parallel = $input->getOption('parallel') || $config->isParallel();
         $concurrencyOption = $input->getOption('concurrency');
-        $concurrency = is_string($concurrencyOption) ? (int) $concurrencyOption : 0;
+        $concurrency = is_string($concurrencyOption) && $concurrencyOption !== '0'
+            ? (int) $concurrencyOption
+            : $config->getConcurrency();
         $formatOption = $input->getOption('format');
         $format = is_string($formatOption) ? $formatOption : 'text';
 
         $io->section('Running evaluations...');
+        $io->text('Mode: <info>' . ($parallel ? 'parallel' : 'sequential') . '</info>'
+            . ($parallel && $concurrency > 0 ? " (concurrency: {$concurrency})" : ''));
 
         $startTime = microtime(true);
-        $result = $this->runEvaluation($eval, $parallel, $concurrency, $io);
+
+        // Run all eval files and collect results
+        $allResults = [];
+        $hasFailure = false;
+
+        foreach ($evalFiles as $evalFile) {
+            $io->text("  Running <comment>{$evalFile}</comment>...");
+
+            $eval = $this->loadEvaluationFile($evalFile);
+
+            if ($eval === null) {
+                $io->warning("  Skipping {$evalFile} - must return an LlmEval instance");
+                continue;
+            }
+
+            // Inject default provider if eval doesn't have one
+            if (!$eval->hasProvider() && $config->getProvider() !== null) {
+                $eval->provider($config->getProvider());
+            }
+
+            $result = $this->runEvaluation($eval, $parallel, $concurrency, $io);
+
+            if ($result === null) {
+                $hasFailure = true;
+                continue;
+            }
+
+            $allResults[] = $result;
+
+            if (!$result->passed) {
+                $hasFailure = true;
+            }
+        }
+
         $duration = microtime(true) - $startTime;
 
-        if ($result === null) {
-            $io->error('Failed to run evaluation');
+        if (count($allResults) === 0) {
+            $io->error('No evaluations were run successfully');
 
             return Command::FAILURE;
         }
 
+        // Merge all results into one
+        $mergedResult = $this->mergeResults($allResults);
+
         // Output results
         if ($format === 'json') {
-            $this->outputJson($result, $output);
+            $this->outputJson($mergedResult, $output);
         } else {
-            $this->outputText($result, $io, $duration);
+            $this->outputText($mergedResult, $io, $duration);
         }
 
-        return $result->passed ? Command::SUCCESS : Command::FAILURE;
+        return $mergedResult->passed ? Command::SUCCESS : Command::FAILURE;
     }
 
     /**
@@ -111,10 +164,14 @@ class RunCommand extends Command
      */
     private function loadEvaluationFile(string $file): ?LlmEval
     {
-        $result = require $file;
+        try {
+            $result = require $file;
 
-        if ($result instanceof LlmEval) {
-            return $result;
+            if ($result instanceof LlmEval) {
+                return $result;
+            }
+        } catch (Throwable $e) {
+            // Will return null
         }
 
         return null;
@@ -131,19 +188,42 @@ class RunCommand extends Command
     ): ?SuiteResult {
         try {
             if ($parallel) {
-                $io->text('Mode: <info>parallel</info>' . ($concurrency > 0 ? " (concurrency: {$concurrency})" : ''));
-
                 return $eval->runAllParallel($concurrency);
             }
 
-            $io->text('Mode: <info>sequential</info>');
-
             return $eval->runAll();
         } catch (Throwable $e) {
-            $io->error($e->getMessage());
+            $io->warning("    Error: {$e->getMessage()}");
 
             return null;
         }
+    }
+
+    /**
+     * Merge multiple SuiteResults into one.
+     *
+     * @param array<SuiteResult> $results
+     */
+    private function mergeResults(array $results): SuiteResult
+    {
+        if (count($results) === 1) {
+            return $results[0];
+        }
+
+        $allIndividualResults = [];
+        $names = [];
+
+        foreach ($results as $suiteResult) {
+            $names[] = $suiteResult->name;
+            foreach ($suiteResult->results as $result) {
+                $allIndividualResults[] = $result;
+            }
+        }
+
+        return SuiteResult::fromResults(
+            implode(' + ', $names),
+            $allIndividualResults
+        );
     }
 
     /**

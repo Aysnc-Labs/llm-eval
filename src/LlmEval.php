@@ -395,4 +395,12 @@ class LlmEval
     {
         return $this->options;
     }
+
+    /**
+     * Check if a provider has been configured.
+     */
+    public function hasProvider(): bool
+    {
+        return $this->provider !== null;
+    }
 }
