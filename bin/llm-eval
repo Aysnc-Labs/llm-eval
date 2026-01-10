@@ -1,0 +1,30 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Find and load autoloader
+$possiblePaths = [
+    __DIR__ . '/../vendor/autoload.php',        // When used as a project
+    __DIR__ . '/../../../autoload.php',          // When installed as a dependency
+];
+
+$autoloaderPath = null;
+foreach ($possiblePaths as $path) {
+    if (file_exists($path)) {
+        $autoloaderPath = $path;
+        break;
+    }
+}
+
+if ($autoloaderPath === null) {
+    fwrite(STDERR, "Could not find autoloader. Run 'composer install' first.\n");
+    exit(1);
+}
+
+require $autoloaderPath;
+
+use Aysnc\AI\LlmEval\Console\Application;
+
+$app = new Application();
+$app->run();

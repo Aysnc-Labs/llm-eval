@@ -5,6 +5,7 @@
 # --- Root
 /*
 !.github
+!bin
 !src
 !tests
 !.editorconfig
