@@ -25,7 +25,7 @@ interface AsyncProviderInterface extends ProviderInterface
      * @param string $prompt The prompt to send.
      * @param array<string, mixed> $options Provider-specific options.
      *
-     * @return PromiseInterface<Response> A promise that resolves to a Response.
+     * @return PromiseInterface A promise that resolves to a Response.
      */
     public function completeAsync(string $prompt, array $options = []): PromiseInterface;
 }

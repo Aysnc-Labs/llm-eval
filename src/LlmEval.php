@@ -14,9 +14,11 @@ use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
 use Aysnc\AI\LlmEval\Assertions\JudgedBy;
 use Aysnc\AI\LlmEval\Dataset\Dataset;
 use Aysnc\AI\LlmEval\Dataset\TestCase;
+use Aysnc\AI\LlmEval\Providers\AsyncProviderInterface;
 use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 use Aysnc\AI\LlmEval\Providers\Response;
 use Closure;
+use GuzzleHttp\Promise\Utils;
 use InvalidArgumentException;
 
 /**
@@ -238,6 +240,116 @@ class LlmEval
         }
 
         return SuiteResult::fromResults($this->name, $results);
+    }
+
+    /**
+     * Run evaluations against all test cases in the dataset concurrently.
+     *
+     * This method requires the provider to implement AsyncProviderInterface.
+     * All LLM requests are fired concurrently using Guzzle promises, which
+     * can significantly speed up batch evaluations.
+     *
+     * @param int $concurrency Maximum number of concurrent requests (0 = unlimited).
+     *
+     * @throws InvalidArgumentException If dataset, provider, or assertion builder is not set.
+     * @throws InvalidArgumentException If provider does not support async operations.
+     */
+    public function runAllParallel(int $concurrency = 0): SuiteResult
+    {
+        if ($this->dataset === null) {
+            throw new InvalidArgumentException('Dataset must be set before running runAllParallel()');
+        }
+
+        if ($this->provider === null) {
+            throw new InvalidArgumentException('Provider must be set before running evaluation');
+        }
+
+        if (!$this->provider instanceof AsyncProviderInterface) {
+            throw new InvalidArgumentException(
+                'Provider must implement AsyncProviderInterface for parallel execution. '
+                . 'Use runAll() for sequential execution instead.'
+            );
+        }
+
+        if ($this->assertionBuilder === null) {
+            throw new InvalidArgumentException('Assertion builder must be set via assertions() before running runAllParallel()');
+        }
+
+        // Convert dataset generator to array (needed for parallel execution)
+        $testCases = iterator_to_array($this->dataset);
+
+        // Build promises for all test cases
+        $promises = [];
+        foreach ($testCases as $index => $testCase) {
+            $promises[$index] = $this->provider->completeAsync($testCase->prompt, $this->options);
+        }
+
+        // If concurrency is limited, use pool pattern; otherwise resolve all at once
+        if ($concurrency > 0) {
+            $responses = $this->resolveWithConcurrency($promises, $concurrency);
+        } else {
+            // Wait for all promises to resolve
+            /** @var array<int, Response> $responses */
+            $responses = Utils::unwrap($promises);
+        }
+
+        // Build results for each test case
+        $results = [];
+        $assertionBuilder = $this->assertionBuilder;
+
+        foreach ($testCases as $index => $testCase) {
+            $response = $responses[$index];
+
+            // Build assertions for this test case
+            $expectation = new Expectation($this);
+            $assertionBuilder($expectation, $testCase);
+
+            // Apply assertions
+            $assertionResults = [];
+            foreach ($expectation->getAssertions() as $assertion) {
+                if ($assertion instanceof JudgedBy) {
+                    $assertion = $assertion->withOriginalPrompt($testCase->prompt);
+                }
+                $assertionResults[] = $assertion->check($response->text);
+            }
+
+            // Use metadata['name'] if set, otherwise use case index
+            $caseName = is_string($testCase->metadata['name'] ?? null)
+                ? $testCase->metadata['name']
+                : "Case {$index}";
+
+            $results[] = Result::fromAssertions(
+                $this->name . ' - ' . $caseName,
+                $response,
+                $assertionResults
+            );
+        }
+
+        return SuiteResult::fromResults($this->name, $results);
+    }
+
+    /**
+     * Resolve promises with a concurrency limit.
+     *
+     * Uses a sliding window approach to limit concurrent requests.
+     *
+     * @param array<int, \GuzzleHttp\Promise\PromiseInterface> $promises
+     * @param int $concurrency Maximum concurrent requests.
+     *
+     * @return array<int, Response>
+     */
+    private function resolveWithConcurrency(array $promises, int $concurrency): array
+    {
+        $responses = [];
+        $chunks = array_chunk($promises, max(1, $concurrency), true);
+
+        foreach ($chunks as $chunk) {
+            /** @var array<int, Response> $chunkResponses */
+            $chunkResponses = Utils::unwrap($chunk);
+            $responses += $chunkResponses;
+        }
+
+        return $responses;
     }
 
     /**

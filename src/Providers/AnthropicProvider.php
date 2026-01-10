@@ -48,7 +48,13 @@ class AnthropicProvider implements AsyncProviderInterface
      */
     public function complete(string $prompt, array $options = []): Response
     {
-        return $this->completeAsync($prompt, $options)->wait();
+        $result = $this->completeAsync($prompt, $options)->wait();
+
+        if (!$result instanceof Response) {
+            throw new RuntimeException('Unexpected response type from async completion');
+        }
+
+        return $result;
     }
 
     /**
@@ -59,7 +65,6 @@ class AnthropicProvider implements AsyncProviderInterface
         $model = is_string($options['model'] ?? null) ? $options['model'] : self::DEFAULT_MODEL;
         $maxTokens = is_int($options['max_tokens'] ?? null) ? $options['max_tokens'] : self::DEFAULT_MAX_TOKENS;
 
-        /** @var PromiseInterface<Response> */
         return $this->client->requestAsync('POST', self::API_URL, [
             'headers' => [
                 'x-api-key' => $this->apiKey,
@@ -73,7 +78,11 @@ class AnthropicProvider implements AsyncProviderInterface
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ],
-        ])->then(function ($response) use ($model): Response {
+        ])->then(function (mixed $response) use ($model): Response {
+            if (!$response instanceof \Psr\Http\Message\ResponseInterface) {
+                throw new RuntimeException('Invalid response type from HTTP client');
+            }
+
             $body = $response->getBody()->getContents();
             $data = json_decode($body, true);
 
@@ -81,6 +90,7 @@ class AnthropicProvider implements AsyncProviderInterface
                 throw new RuntimeException('Invalid JSON response from Anthropic API');
             }
 
+            /** @var array<string, mixed> $data */
             return $this->buildResponse($data, $model);
         });
     }
