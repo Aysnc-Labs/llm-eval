@@ -12,6 +12,7 @@ namespace Aysnc\AI\LlmEval\Providers;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Promise\PromiseInterface;
 use RuntimeException;
 
 /**
@@ -22,7 +23,7 @@ use RuntimeException;
  *   $response = $provider->complete('What is 2+2?');
  *   echo $response->text; // "4"
  */
-class AnthropicProvider implements ProviderInterface
+class AnthropicProvider implements AsyncProviderInterface
 {
     private const string API_URL = 'https://api.anthropic.com/v1/messages';
     private const string API_VERSION = '2023-06-01';
@@ -47,10 +48,19 @@ class AnthropicProvider implements ProviderInterface
      */
     public function complete(string $prompt, array $options = []): Response
     {
+        return $this->completeAsync($prompt, $options)->wait();
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function completeAsync(string $prompt, array $options = []): PromiseInterface
+    {
         $model = is_string($options['model'] ?? null) ? $options['model'] : self::DEFAULT_MODEL;
         $maxTokens = is_int($options['max_tokens'] ?? null) ? $options['max_tokens'] : self::DEFAULT_MAX_TOKENS;
 
-        $response = $this->client->request('POST', self::API_URL, [
+        /** @var PromiseInterface<Response> */
+        return $this->client->requestAsync('POST', self::API_URL, [
             'headers' => [
                 'x-api-key' => $this->apiKey,
                 'anthropic-version' => self::API_VERSION,
@@ -63,16 +73,26 @@ class AnthropicProvider implements ProviderInterface
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ],
-        ]);
+        ])->then(function ($response) use ($model): Response {
+            $body = $response->getBody()->getContents();
+            $data = json_decode($body, true);
 
-        $body = $response->getBody()->getContents();
-        $data = json_decode($body, true);
+            if (!is_array($data)) {
+                throw new RuntimeException('Invalid JSON response from Anthropic API');
+            }
 
-        if (!is_array($data)) {
-            throw new RuntimeException('Invalid JSON response from Anthropic API');
-        }
+            return $this->buildResponse($data, $model);
+        });
+    }
 
-        /** @var array<string, mixed> $data */
+    /**
+     * Build a Response from API data.
+     *
+     * @param array<string, mixed> $data The decoded API response.
+     * @param string $fallbackModel Model to use if not in response.
+     */
+    private function buildResponse(array $data, string $fallbackModel): Response
+    {
         $usage = is_array($data['usage'] ?? null) ? $data['usage'] : [];
 
         $inputTokens = is_int($usage['input_tokens'] ?? null) ? $usage['input_tokens'] : 0;
@@ -80,7 +100,7 @@ class AnthropicProvider implements ProviderInterface
 
         return new Response(
             text: $this->extractText($data),
-            model: is_string($data['model'] ?? null) ? $data['model'] : $model,
+            model: is_string($data['model'] ?? null) ? $data['model'] : $fallbackModel,
             inputTokens: $inputTokens,
             outputTokens: $outputTokens,
             raw: $data,
