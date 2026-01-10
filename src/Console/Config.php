@@ -22,6 +22,7 @@ use RuntimeException;
  *   - provider: Default ProviderInterface to use
  *   - directory: Directory containing eval files (default: 'evals')
  *   - cache: true (use .llm-cache), string (custom path), or false (disabled)
+ *   - cacheTtl: Cache time-to-live in seconds (default: 0 = forever)
  *   - parallel: Whether to run in parallel by default (default: false)
  *   - concurrency: Max concurrent requests when parallel (default: 0 = unlimited)
  */
@@ -32,6 +33,7 @@ class Config
     private ?ProviderInterface $provider = null;
     private string $directory = 'evals';
     private ?string $cache = null;
+    private int $cacheTtl = 0;
     private bool $parallel = false;
     private int $concurrency = 0;
 
@@ -110,11 +112,15 @@ class Config
             $this->concurrency = $data['concurrency'];
         }
 
+        if (isset($data['cacheTtl']) && is_int($data['cacheTtl'])) {
+            $this->cacheTtl = $data['cacheTtl'];
+        }
+
         // Wrap provider with caching if cache path is set
         if ($this->provider !== null && $this->cache !== null) {
             $this->provider = new CachingProvider(
                 $this->provider,
-                new FilesystemCache($this->cache)
+                new FilesystemCache($this->cache, $this->cacheTtl)
             );
         }
     }

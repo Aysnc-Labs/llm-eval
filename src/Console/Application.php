@@ -26,5 +26,6 @@ class Application extends BaseApplication
 
         $this->add(new RunCommand());
         $this->add(new InitCommand());
+        $this->add(new CacheClearCommand());
     }
 }
