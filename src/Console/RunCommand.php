@@ -239,6 +239,14 @@ class RunCommand extends Command
             $io->writeln("  {$status} {$r->name}");
 
             if (!$r->passed) {
+                // Show actual response text (truncated if too long)
+                $actualText = $r->response->text;
+                $displayText = strlen($actualText) > 100
+                    ? substr($actualText, 0, 100) . '...'
+                    : $actualText;
+                $displayText = str_replace("\n", ' ', $displayText);
+                $io->writeln("       <fg=gray>Got: \"{$displayText}\"</>");
+
                 foreach ($r->assertionResults as $assertion) {
                     if (!$assertion->passed) {
                         $io->writeln("       <fg=yellow>→ {$assertion->message}</>");
