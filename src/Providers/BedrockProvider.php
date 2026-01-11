@@ -37,7 +37,7 @@ use RuntimeException;
  */
 class BedrockProvider implements AsyncProviderInterface
 {
-    private const string DEFAULT_MODEL = 'anthropic.claude-sonnet-4-20250514-v1:0';
+    private const string DEFAULT_MODEL = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
     private const int DEFAULT_MAX_TOKENS = 1024;
 
     private BedrockRuntimeClient $client;
