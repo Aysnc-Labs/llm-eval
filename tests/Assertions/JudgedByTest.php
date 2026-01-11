@@ -41,7 +41,8 @@ class JudgedByTest extends TestCase
         $result = $assertion->check('Mediocre response.');
 
         $this->assertFalse($result->passed);
-        $this->assertStringContainsString('below threshold', $result->message);
+        $this->assertStringContainsString('Score: 0.50/0.80', $result->message);
+        $this->assertStringContainsString('Okay', $result->message);
     }
 
     public function testPassesWhenScoreAtThreshold(): void

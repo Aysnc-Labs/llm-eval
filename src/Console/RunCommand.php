@@ -252,6 +252,13 @@ class RunCommand extends Command
                         $io->writeln("       <fg=yellow>→ {$assertion->message}</>");
                     }
                 }
+            } elseif ($io->isVerbose()) {
+                // In verbose mode, show judge reasoning for passes too
+                foreach ($r->assertionResults as $assertion) {
+                    if (str_starts_with($assertion->description, 'Judged by LLM') && $assertion->message !== 'Passed') {
+                        $io->writeln("       <fg=gray>→ {$assertion->message}</>");
+                    }
+                }
             }
         }
 

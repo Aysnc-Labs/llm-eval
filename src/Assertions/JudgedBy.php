@@ -97,19 +97,20 @@ class JudgedBy implements AssertionInterface
             );
         }
 
+        $percentage = (int) ($judgment['score'] * 100);
+        $thresholdPercent = (int) ($this->threshold * 100);
+        $message = sprintf(
+            'Score: %d%% (threshold: %d%%) - %s',
+            $percentage,
+            $thresholdPercent,
+            $judgment['reasoning'],
+        );
+
         if ($judgment['pass'] && $judgment['score'] >= $this->threshold) {
-            return AssertionResult::pass($this->getDescription());
+            return new AssertionResult(true, $this->getDescription(), $message);
         }
 
-        return AssertionResult::fail(
-            $this->getDescription(),
-            sprintf(
-                'Score %.2f below threshold %.2f. Reasoning: %s',
-                $judgment['score'],
-                $this->threshold,
-                $judgment['reasoning'],
-            ),
-        );
+        return AssertionResult::fail($this->getDescription(), $message);
     }
 
     #[Override]
