@@ -12,6 +12,7 @@ namespace Aysnc\AI\LlmEval\Tests\Providers;
 
 use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
 use Aysnc\AI\LlmEval\Providers\Response;
+use Aysnc\AI\LlmEval\Providers\ToolCall;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -93,6 +94,151 @@ class AnthropicProviderTest extends TestCase
         $response = $provider->complete('Hi');
 
         $this->assertSame('', $response->text);
+    }
+
+    /**
+     * Test that tool calls are extracted from response.
+     */
+    public function testCompleteExtractsToolCalls(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                [
+                    'type' => 'tool_use',
+                    'id' => 'toolu_01A09q90qw90lq917835lqub',
+                    'name' => 'get_weather',
+                    'input' => ['location' => 'San Francisco', 'unit' => 'celsius'],
+                ],
+            ],
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $response = $provider->complete('What is the weather?');
+
+        $this->assertTrue($response->hasToolCalls());
+        $this->assertCount(1, $response->toolCalls);
+
+        $toolCall = $response->toolCalls[0];
+        $this->assertInstanceOf(ToolCall::class, $toolCall);
+        $this->assertSame('toolu_01A09q90qw90lq917835lqub', $toolCall->id);
+        $this->assertSame('get_weather', $toolCall->name);
+        $this->assertSame(['location' => 'San Francisco', 'unit' => 'celsius'], $toolCall->input);
+    }
+
+    /**
+     * Test that multiple tool calls are extracted.
+     */
+    public function testCompleteExtractsMultipleToolCalls(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                [
+                    'type' => 'tool_use',
+                    'id' => 'toolu_1',
+                    'name' => 'get_weather',
+                    'input' => ['location' => 'NYC'],
+                ],
+                [
+                    'type' => 'tool_use',
+                    'id' => 'toolu_2',
+                    'name' => 'send_email',
+                    'input' => ['to' => 'test@example.com', 'body' => 'Hello'],
+                ],
+            ],
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 10],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $response = $provider->complete('Check weather and send email');
+
+        $this->assertCount(2, $response->toolCalls);
+        $this->assertSame('get_weather', $response->toolCalls[0]->name);
+        $this->assertSame('send_email', $response->toolCalls[1]->name);
+    }
+
+    /**
+     * Test that text and tool calls can coexist.
+     */
+    public function testCompleteExtractsTextAndToolCalls(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'Let me check the weather for you.'],
+                [
+                    'type' => 'tool_use',
+                    'id' => 'toolu_1',
+                    'name' => 'get_weather',
+                    'input' => ['location' => 'NYC'],
+                ],
+            ],
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 15],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $response = $provider->complete('What is the weather?');
+
+        $this->assertSame('Let me check the weather for you.', $response->text);
+        $this->assertTrue($response->hasToolCalls());
+        $this->assertSame('get_weather', $response->toolCalls[0]->name);
+    }
+
+    /**
+     * Test that response without tool calls has empty array.
+     */
+    public function testCompleteWithNoToolCalls(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'Hello!'],
+            ],
+            'usage' => ['input_tokens' => 5, 'output_tokens' => 2],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $response = $provider->complete('Hi');
+
+        $this->assertFalse($response->hasToolCalls());
+        $this->assertSame([], $response->toolCalls);
+    }
+
+    /**
+     * Test that tool calls with empty input are handled.
+     */
+    public function testCompleteWithEmptyToolInput(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                [
+                    'type' => 'tool_use',
+                    'id' => 'toolu_1',
+                    'name' => 'get_current_time',
+                    'input' => [],
+                ],
+            ],
+            'usage' => ['input_tokens' => 5, 'output_tokens' => 5],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $response = $provider->complete('What time is it?');
+
+        $this->assertTrue($response->hasToolCalls());
+        $this->assertSame([], $response->toolCalls[0]->input);
     }
 
     /**

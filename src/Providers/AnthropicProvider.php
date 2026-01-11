@@ -114,6 +114,7 @@ class AnthropicProvider implements AsyncProviderInterface
             inputTokens: $inputTokens,
             outputTokens: $outputTokens,
             raw: $data,
+            toolCalls: $this->extractToolCalls($data),
         );
     }
 
@@ -140,5 +141,60 @@ class AnthropicProvider implements AsyncProviderInterface
         }
 
         return '';
+    }
+
+    /**
+     * Extract tool calls from the API response.
+     *
+     * Anthropic returns tool calls as content blocks with type "tool_use":
+     * ```json
+     * {
+     *   "type": "tool_use",
+     *   "id": "toolu_01A09q90qw90lq917835lqub",
+     *   "name": "get_weather",
+     *   "input": {"location": "San Francisco", "unit": "celsius"}
+     * }
+     * ```
+     *
+     * @param array<string, mixed> $data The decoded API response.
+     * @return array<ToolCall>
+     */
+    private function extractToolCalls(array $data): array
+    {
+        $content = $data['content'] ?? [];
+
+        if (!is_array($content)) {
+            return [];
+        }
+
+        $toolCalls = [];
+
+        foreach ($content as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+
+            if (($block['type'] ?? '') !== 'tool_use') {
+                continue;
+            }
+
+            $id = $block['id'] ?? '';
+            $name = $block['name'] ?? '';
+            $input = $block['input'] ?? [];
+
+            if (!is_string($id) || !is_string($name) || !is_array($input)) {
+                continue;
+            }
+
+            // Anthropic API always returns input as a JSON object (string keys)
+            /** @var array<string, mixed> $input */
+            $toolCalls[] = new ToolCall(
+                id: $id,
+                name: $name,
+                input: $input,
+            );
+        }
+
+        return $toolCalls;
     }
 }

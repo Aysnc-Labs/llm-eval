@@ -29,7 +29,7 @@ class JudgedByTest extends TestCase
         $result = $assertion->check('Unhelpful response.');
 
         $this->assertFalse($result->passed);
-        $this->assertStringContainsString('0.30', $result->message);
+        $this->assertStringContainsString('30%', $result->message);
         $this->assertStringContainsString('Not helpful', $result->message);
     }
 
@@ -41,7 +41,8 @@ class JudgedByTest extends TestCase
         $result = $assertion->check('Mediocre response.');
 
         $this->assertFalse($result->passed);
-        $this->assertStringContainsString('Score: 0.50/0.80', $result->message);
+        $this->assertStringContainsString('50%', $result->message);
+        $this->assertStringContainsString('threshold: 80%', $result->message);
         $this->assertStringContainsString('Okay', $result->message);
     }
 
