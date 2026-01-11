@@ -260,6 +260,17 @@ class RunCommand extends Command
                     }
                 }
             }
+
+            // In verbose mode, show tool calls
+            if ($io->isVerbose() && $r->response->hasToolCalls()) {
+                $toolNames = array_map(
+                    fn ($tc) => $tc->name,
+                    $r->response->toolCalls
+                );
+                $toolList = implode(', ', array_unique($toolNames));
+                $count = count($r->response->toolCalls);
+                $io->writeln("       <fg=cyan>Tools ({$count}): {$toolList}</>");
+            }
         }
 
         $io->newLine();
@@ -304,6 +315,10 @@ class RunCommand extends Command
                 'name' => $r->name,
                 'passed' => $r->passed,
                 'response' => $r->response->text,
+                'tool_calls' => array_map(fn ($tc) => [
+                    'name' => $tc->name,
+                    'input' => $tc->input,
+                ], $r->response->toolCalls),
                 'assertions' => array_map(fn (AssertionResult $a) => [
                     'description' => $a->description,
                     'passed' => $a->passed,

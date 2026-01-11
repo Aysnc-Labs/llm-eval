@@ -11,13 +11,17 @@ declare(strict_types=1);
 namespace Aysnc\AI\LlmEval;
 
 use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
+use Aysnc\AI\LlmEval\Assertions\CalledTool;
+use Aysnc\AI\LlmEval\Assertions\CalledToolCount;
 use Aysnc\AI\LlmEval\Assertions\Contains;
+use Aysnc\AI\LlmEval\Assertions\DidNotCallTool;
 use Aysnc\AI\LlmEval\Assertions\IsJson;
 use Aysnc\AI\LlmEval\Assertions\JudgedBy;
 use Aysnc\AI\LlmEval\Assertions\MatchesRegex;
 use Aysnc\AI\LlmEval\Assertions\MaxLength;
 use Aysnc\AI\LlmEval\Assertions\MinLength;
 use Aysnc\AI\LlmEval\Assertions\NotContains;
+use Aysnc\AI\LlmEval\Assertions\ToolCallHasParam;
 use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 
 /**
@@ -128,6 +132,62 @@ class Expectation
         ?string $model = null,
     ): self {
         $this->assertions[] = new JudgedBy($judge, $criteria, $threshold, $model);
+
+        return $this;
+    }
+
+    /**
+     * Assert that a specific tool was called.
+     *
+     * @param string $name The tool name to check for.
+     * @param int|null $times If set, assert exact number of times called.
+     */
+    public function calledTool(string $name, ?int $times = null): self
+    {
+        $this->assertions[] = new CalledTool($name, $times);
+
+        return $this;
+    }
+
+    /**
+     * Assert that a specific tool was NOT called.
+     *
+     * @param string $name The tool name that should not have been called.
+     */
+    public function didNotCallTool(string $name): self
+    {
+        $this->assertions[] = new DidNotCallTool($name);
+
+        return $this;
+    }
+
+    /**
+     * Assert the total number of tool calls in the response.
+     *
+     * @param int $count The expected total number of tool calls.
+     */
+    public function calledToolCount(int $count): self
+    {
+        $this->assertions[] = new CalledToolCount($count);
+
+        return $this;
+    }
+
+    /**
+     * Assert that a tool call has a specific parameter.
+     *
+     * @param string $toolName The tool name to check.
+     * @param string $paramName The parameter name to check for.
+     * @param mixed $value If provided, also check the parameter equals this value.
+     */
+    public function toolCallHasParam(string $toolName, string $paramName, mixed $value = null): self
+    {
+        // We use a special sentinel to distinguish "no value check" from "check for null"
+        if (func_num_args() === 2) {
+            $this->assertions[] = new ToolCallHasParam($toolName, $paramName);
+        } else {
+            $this->assertions[] = new ToolCallHasParam($toolName, $paramName, $value);
+        }
 
         return $this;
     }

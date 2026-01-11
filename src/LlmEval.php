@@ -12,6 +12,7 @@ namespace Aysnc\AI\LlmEval;
 
 use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
 use Aysnc\AI\LlmEval\Assertions\JudgedBy;
+use Aysnc\AI\LlmEval\Assertions\ResponseAwareAssertion;
 use Aysnc\AI\LlmEval\Dataset\Dataset;
 use Aysnc\AI\LlmEval\Dataset\TestCase;
 use Aysnc\AI\LlmEval\Providers\AsyncProviderInterface;
@@ -199,6 +200,11 @@ class LlmEval
                 $assertion = $assertion->withOriginalPrompt($this->prompt);
             }
 
+            // Inject full Response into assertions that need it (e.g., tool call assertions)
+            if ($assertion instanceof ResponseAwareAssertion) {
+                $assertion = $assertion->withResponse($response);
+            }
+
             $assertionResults[] = $assertion->check($response->text);
         }
 
@@ -309,6 +315,9 @@ class LlmEval
             foreach ($expectation->getAssertions() as $assertion) {
                 if ($assertion instanceof JudgedBy) {
                     $assertion = $assertion->withOriginalPrompt($testCase->prompt);
+                }
+                if ($assertion instanceof ResponseAwareAssertion) {
+                    $assertion = $assertion->withResponse($response);
                 }
                 $assertionResults[] = $assertion->check($response->text);
             }

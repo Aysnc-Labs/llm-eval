@@ -65,19 +65,26 @@ class AnthropicProvider implements AsyncProviderInterface
         $model = is_string($options['model'] ?? null) ? $options['model'] : self::DEFAULT_MODEL;
         $maxTokens = is_int($options['max_tokens'] ?? null) ? $options['max_tokens'] : self::DEFAULT_MAX_TOKENS;
 
+        $json = [
+            'model' => $model,
+            'max_tokens' => $maxTokens,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ];
+
+        // Add tools if provided (Anthropic format)
+        if (isset($options['tools']) && is_array($options['tools'])) {
+            $json['tools'] = $options['tools'];
+        }
+
         return $this->client->requestAsync('POST', self::API_URL, [
             'headers' => [
                 'x-api-key' => $this->apiKey,
                 'anthropic-version' => self::API_VERSION,
                 'content-type' => 'application/json',
             ],
-            'json' => [
-                'model' => $model,
-                'max_tokens' => $maxTokens,
-                'messages' => [
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-            ],
+            'json' => $json,
         ])->then(function (mixed $response) use ($model): Response {
             if (!$response instanceof \Psr\Http\Message\ResponseInterface) {
                 throw new RuntimeException('Invalid response type from HTTP client');
