@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace Aysnc\AI\LlmEval\Cache;
 
 use Aysnc\AI\LlmEval\Providers\Response;
+use Aysnc\AI\LlmEval\Providers\ToolCall;
 use RuntimeException;
 
 /**
@@ -162,6 +163,10 @@ class FilesystemCache implements CacheInterface
             'inputTokens' => $response->inputTokens,
             'outputTokens' => $response->outputTokens,
             'raw' => $response->raw,
+            'toolCalls' => array_map(
+                fn (ToolCall $tc) => ['id' => $tc->id, 'name' => $tc->name, 'input' => $tc->input],
+                $response->toolCalls,
+            ),
             '_cached_at' => time(),
         ];
     }
@@ -179,12 +184,24 @@ class FilesystemCache implements CacheInterface
 
         $raw = is_array($data['raw'] ?? null) ? $data['raw'] : [];
 
+        // Restore tool calls
+        $toolCalls = [];
+        if (is_array($data['toolCalls'] ?? null)) {
+            foreach ($data['toolCalls'] as $tc) {
+                if (is_array($tc) && is_string($tc['id'] ?? null) && is_string($tc['name'] ?? null)) {
+                    $input = is_array($tc['input'] ?? null) ? $tc['input'] : [];
+                    $toolCalls[] = new ToolCall($tc['id'], $tc['name'], $this->ensureStringKeys($input));
+                }
+            }
+        }
+
         return new Response(
             text: $data['text'],
             model: $data['model'],
             inputTokens: is_int($data['inputTokens'] ?? null) ? $data['inputTokens'] : 0,
             outputTokens: is_int($data['outputTokens'] ?? null) ? $data['outputTokens'] : 0,
             raw: $this->ensureStringKeys($raw),
+            toolCalls: $toolCalls,
         );
     }
 
