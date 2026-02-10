@@ -23,9 +23,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Test case for BedrockProvider using the Converse API.
- *
- * @requires extension json
  */
+#[\PHPUnit\Framework\Attributes\RequiresPhpExtension('json')]
 class BedrockProviderTest extends TestCase
 {
     /**
@@ -451,43 +450,10 @@ class BedrockProviderTest extends TestCase
      * Create a mock Bedrock client with a predefined Converse API response.
      *
      * @param array<string, mixed> $responseData The response data to return.
-     * @return \Aws\BedrockRuntime\BedrockRuntimeClient
      */
-    private function createMockBedrockClient(array $responseData): object
+    private function createMockBedrockClient(array $responseData): \Aws\BedrockRuntime\BedrockRuntimeClient
     {
-        // Create a mock that returns the response as an AWS Result-like object
-        $mockResult = new class ($responseData) {
-            /** @var array<string, mixed> */
-            private array $data;
-
-            /**
-             * @param array<string, mixed> $data
-             */
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            /**
-             * @return array<string, mixed>
-             */
-            public function toArray(): array
-            {
-                return $this->data;
-            }
-        };
-
-        // Create a mock client that returns the result wrapped in a promise
-        // AWS SDK uses __call for async methods, so we need addMethods()
-        $mockClient = $this->getMockBuilder(\Aws\BedrockRuntime\BedrockRuntimeClient::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['converseAsync'])
-            ->getMock();
-
-        $mockClient->method('converseAsync')
-            ->willReturn(new FulfilledPromise($mockResult));
-
-        return $mockClient;
+        return $this->createMockBedrockClientWithCapture($responseData, $unused);
     }
 
     /**
@@ -495,43 +461,57 @@ class BedrockProviderTest extends TestCase
      *
      * @param array<string, mixed> $responseData The response data to return.
      * @param array<string, mixed>|null &$capturedRequest Reference to store the captured request.
-     * @return \Aws\BedrockRuntime\BedrockRuntimeClient
      */
-    private function createMockBedrockClientWithCapture(array $responseData, ?array &$capturedRequest): object
+    private function createMockBedrockClientWithCapture(array $responseData, ?array &$capturedRequest): \Aws\BedrockRuntime\BedrockRuntimeClient
     {
-        $mockResult = new class ($responseData) {
-            /** @var array<string, mixed> */
-            private array $data;
+        $result = self::createMockResult($responseData);
+
+        return new class ($result, $capturedRequest) extends \Aws\BedrockRuntime\BedrockRuntimeClient {
+            private object $result;
+
+            /** @var array<string, mixed>|null */
+            private ?array $captured; // @phpstan-ignore property.onlyWritten (read via reference)
 
             /**
-             * @param array<string, mixed> $data
+             * @param array<string, mixed>|null &$capturedRequest
              */
-            public function __construct(array $data)
+            public function __construct(object $result, ?array &$capturedRequest)
             {
-                $this->data = $data;
+                // Skip parent constructor — we don't need a real AWS client
+                $this->result = $result;
+                $this->captured = &$capturedRequest;
             }
 
             /**
-             * @return array<string, mixed>
+             * @param array<string, mixed> $args
              */
+            public function converseAsync(array $args = []): FulfilledPromise
+            {
+                $this->captured = $args;
+
+                return new FulfilledPromise($this->result);
+            }
+        };
+    }
+
+    /**
+     * Create a mock AWS Result-like object.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function createMockResult(array $data): object
+    {
+        return new class ($data) {
+            /** @param array<string, mixed> $data */
+            public function __construct(private readonly array $data)
+            {
+            }
+
+            /** @return array<string, mixed> */
             public function toArray(): array
             {
                 return $this->data;
             }
         };
-
-        $mockClient = $this->getMockBuilder(\Aws\BedrockRuntime\BedrockRuntimeClient::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['converseAsync'])
-            ->getMock();
-
-        $mockClient->method('converseAsync')
-            ->willReturnCallback(function (array $request) use ($mockResult, &$capturedRequest) {
-                $capturedRequest = $request;
-
-                return new FulfilledPromise($mockResult);
-            });
-
-        return $mockClient;
     }
 }

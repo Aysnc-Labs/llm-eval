@@ -53,7 +53,10 @@ class RunCommandTest extends TestCase
         $tester->execute(['file' => $filename]);
 
         $this->assertSame(1, $tester->getStatusCode());
-        $this->assertStringContainsString('must return an LlmEval instance', $tester->getDisplay());
+
+        // Normalize whitespace since Symfony Console may wrap long lines
+        $display = (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
+        $this->assertStringContainsString('must return an LlmEval instance', $display);
     }
 
     public function testRunWithPassingEvaluation(): void
