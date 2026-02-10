@@ -35,7 +35,7 @@ use RuntimeException;
  * Usage with default credential chain (env vars, ~/.aws/credentials, IAM role):
  *   $provider = new BedrockProvider(region: 'us-east-1');
  */
-class BedrockProvider implements AsyncProviderInterface
+class BedrockProvider implements AsyncConversableProviderInterface
 {
     private const string DEFAULT_MODEL = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
     private const int DEFAULT_MAX_TOKENS = 1024;
@@ -100,19 +100,34 @@ class BedrockProvider implements AsyncProviderInterface
      */
     public function completeAsync(string $prompt, array $options = []): PromiseInterface
     {
+        return $this->completeWithMessagesAsync([Message::user($prompt)], $options);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function completeWithMessages(array $messages, array $options = []): Response
+    {
+        $result = $this->completeWithMessagesAsync($messages, $options)->wait();
+
+        if (!$result instanceof Response) {
+            throw new RuntimeException('Unexpected response type from async completion');
+        }
+
+        return $result;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function completeWithMessagesAsync(array $messages, array $options = []): PromiseInterface
+    {
         $model = is_string($options['model'] ?? null) ? $options['model'] : self::DEFAULT_MODEL;
         $maxTokens = is_int($options['max_tokens'] ?? null) ? $options['max_tokens'] : self::DEFAULT_MAX_TOKENS;
 
         $request = [
             'modelId' => $model,
-            'messages' => [
-                [
-                    'role' => 'user',
-                    'content' => [
-                        ['text' => $prompt],
-                    ],
-                ],
-            ],
+            'messages' => $this->convertMessages($messages),
             'inferenceConfig' => [
                 'maxTokens' => $maxTokens,
             ],
@@ -134,6 +149,65 @@ class BedrockProvider implements AsyncProviderInterface
 
             return $this->buildResponse($data, $model);
         });
+    }
+
+    /**
+     * Convert Message objects to Bedrock Converse API message format.
+     *
+     * @param array<Message> $messages
+     * @return array<array<string, mixed>>
+     */
+    private function convertMessages(array $messages): array
+    {
+        $converted = [];
+
+        foreach ($messages as $message) {
+            if ($message->hasToolResults()) {
+                // Tool results are sent as user role with toolResult content blocks
+                $content = [];
+                foreach ($message->toolResults as $result) {
+                    $block = [
+                        'toolResult' => [
+                            'toolUseId' => $result->toolCallId,
+                            'content' => [
+                                ['text' => $result->content],
+                            ],
+                        ],
+                    ];
+                    if ($result->isError) {
+                        $block['toolResult']['status'] = 'error';
+                    }
+                    $content[] = $block;
+                }
+                $converted[] = ['role' => 'user', 'content' => $content];
+            } elseif ($message->role === Role::Assistant && $message->hasToolCalls()) {
+                // Assistant message with tool calls needs text + toolUse content blocks
+                $content = [];
+                if ($message->text !== '') {
+                    $content[] = ['text' => $message->text];
+                }
+                foreach ($message->toolCalls as $toolCall) {
+                    $content[] = [
+                        'toolUse' => [
+                            'toolUseId' => $toolCall->id,
+                            'name' => $toolCall->name,
+                            'input' => $toolCall->input,
+                        ],
+                    ];
+                }
+                $converted[] = ['role' => 'assistant', 'content' => $content];
+            } else {
+                // Simple text message (user or assistant)
+                $converted[] = [
+                    'role' => $message->role->value,
+                    'content' => [
+                        ['text' => $message->text],
+                    ],
+                ];
+            }
+        }
+
+        return $converted;
     }
 
     /**
