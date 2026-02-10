@@ -1,62 +1,6 @@
 # LLM-Eval
 
-> **⚠️ Work In Progress** - This package is under active development. APIs may change.
-
-A PHP package for systematically evaluating LLM outputs. Test your prompts, validate responses, and ensure your AI features work as expected.
-
-## Why LLM-Eval?
-
-Testing LLM applications is hard. Outputs are non-deterministic, prompts change frequently, and traditional unit tests don't capture the nuance of natural language. LLM-Eval provides:
-
-- **Fluent API** for defining evaluations
-- **Powerful assertions** (text matching, JSON validation, regex, LLM-as-judge)
-- **Tool call testing** (verify your AI agents call the right functions)
-- **Dataset support** (CSV, JSON, arrays)
-- **Parallel execution** (run hundreds of tests quickly)
-- **Multiple providers** (Anthropic Claude, AWS Bedrock)
-
-## Quick Example
-
-```php
-use Aysnc\AI\LlmEval\LlmEval;
-use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
-use Aysnc\AI\LlmEval\Dataset\Dataset;
-
-$provider = new AnthropicProvider('your-api-key');
-
-$dataset = Dataset::fromArray([
-    ['prompt' => 'What is 2+2?', 'expected' => '4'],
-    ['prompt' => 'What is the capital of France?', 'expected' => 'Paris'],
-]);
-
-$results = LlmEval::create('math-test')
-    ->provider($provider)
-    ->dataset($dataset)
-    ->assertions(function ($expect, $testCase) {
-        $expect->contains($testCase->getExpected('default'), caseSensitive: false);
-    })
-    ->run();
-
-echo "Pass rate: {$results->passRate()}%\n";
-```
-
-## Features
-
-### ✅ Completed (Phase 1-5)
-
-- **Providers**: Anthropic Claude (direct API), AWS Bedrock (Converse API)
-- **Assertions**: Contains, regex, JSON validation, length checks, tool call validation
-- **LLM-as-Judge**: Use an LLM to evaluate another LLM's output
-- **Datasets**: Load from CSV, JSON, or arrays
-- **Parallel Execution**: Run evaluations concurrently with configurable limits
-- **CLI Runner**: `llm-eval run [eval-name]` with caching support
-- **Tool Call Testing**: Verify LLMs call functions correctly with proper parameters
-
-### 🚧 Planned (Phase 6)
-
-- **Multi-turn conversations**: Test agentic workflows with back-and-forth tool execution
-- **Conversation helper**: Manage conversation state and tool execution loops
-- **Tool executor interface**: Standardized mocking for tool calls
+A PHP package for evaluating LLM outputs. Test your prompts, validate responses, and ensure your AI features work correctly.
 
 ## Installation
 
@@ -64,122 +8,89 @@ echo "Pass rate: {$results->passRate()}%\n";
 composer require aysnc/llm-eval
 ```
 
-### Optional Dependencies
-
-```bash
-# For AWS Bedrock support
-composer require aws/aws-sdk-php
-```
-
-## Requirements
-
-- PHP 8.3+
-- Guzzle HTTP client
-
-## Providers
-
-### Anthropic Claude (Direct API)
-
-```php
-use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
-
-$provider = new AnthropicProvider('your-api-key');
-```
-
-### AWS Bedrock (Any Model)
-
-Works with Claude, Titan, Llama, Mistral, and other Bedrock models via the Converse API:
-
-```php
-use Aysnc\AI\LlmEval\Providers\BedrockProvider;
-
-$provider = new BedrockProvider(
-    region: 'us-east-1',
-    accessKeyId: 'AKIA...',
-    secretAccessKey: 'secret...'
-);
-
-// Or use default credential chain (env vars, ~/.aws/credentials, IAM role)
-$provider = new BedrockProvider(region: 'us-east-1');
-```
-
-## Assertions
-
-```php
-->assertions(function ($expect, $testCase) {
-    // Text matching
-    $expect->contains('Paris');
-    $expect->notContains('London');
-    $expect->matchesRegex('/\d{4}-\d{2}-\d{2}/');
-
-    // JSON validation
-    $expect->isJson();
-    $expect->matchesJsonSchema(['type' => 'object', 'properties' => [...]]);
-
-    // Length checks
-    $expect->minLength(10);
-    $expect->maxLength(100);
-
-    // Tool calls
-    $expect->calledTool('get_weather');
-    $expect->toolCallHasParam('get_weather', 'location', 'Paris');
-    $expect->didNotCallTool('dangerous_function');
-
-    // LLM-as-judge
-    $expect->judgedBy($judgeProvider, 'Is this response helpful and accurate?');
-});
-```
-
-## CLI Usage
-
-```bash
-# Initialize config
-vendor/bin/llm-eval init
-
-# Run all evaluations
-vendor/bin/llm-eval run
-
-# Run specific evaluation
-vendor/bin/llm-eval run my-test
-
-# Run with parallelization
-vendor/bin/llm-eval run --parallel --concurrency=10
-
-# Clear cache
-vendor/bin/llm-eval cache:clear
-```
-
-## Configuration
-
-Create `llm-eval.php` in your project root:
+## Quick Start
 
 ```php
 <?php
 
+use Aysnc\AI\LlmEval\Dataset\Dataset;
+use Aysnc\AI\LlmEval\LlmEval;
 use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
 
-return [
-    'provider' => new AnthropicProvider(getenv('ANTHROPIC_API_KEY')),
-    'directory' => __DIR__ . '/evals',
-    'cache' => true,
-    'parallel' => false,
-    'concurrency' => 5,
-];
+$provider = new AnthropicProvider(getenv('ANTHROPIC_API_KEY'));
+
+$dataset = Dataset::fromArray([
+    ['prompt' => 'What is 2+2? Reply with just the number.', 'expected' => '4'],
+    ['prompt' => 'What is the capital of France? Reply with just the city name.', 'expected' => 'Paris'],
+    ['prompt' => 'Is the sky blue? Reply with just yes or no.', 'expected' => 'yes'],
+]);
+
+$results = LlmEval::create('quick-start')
+    ->provider($provider)
+    ->dataset($dataset)
+    ->assertions(function ($expect, $testCase): void {
+        $expect->contains($testCase->getExpected('default'), caseSensitive: false);
+    })
+    ->runAll();
+
+echo "Pass rate: {$results->passRatePercent()}\n";
+// Pass rate: 100.0%
 ```
 
-## Project Structure
+## Assertions
 
-```
-your-project/
-├── llm-eval.php          # Configuration
-├── evals/                # Evaluation files
-│   ├── math-test.php
-│   ├── summarization.php
-│   └── tool-calling.php
-└── .llm-cache/          # Response cache (auto-created)
+### Text
+
+```php
+$expect->contains('Paris');
+$expect->contains('paris', caseSensitive: false);
+$expect->notContains('London');
+$expect->matchesRegex('/\d{4}-\d{2}-\d{2}/');
+$expect->minLength(10);
+$expect->maxLength(500);
 ```
 
-## Testing Tool Calls
+### JSON
+
+```php
+$expect->isJson();
+```
+
+### Tool Calls
+
+```php
+$expect->calledTool('get_weather');
+$expect->calledTool('get_weather', times: 2);
+$expect->toolCallHasParam('get_weather', 'location');
+$expect->toolCallHasParam('get_weather', 'location', 'Paris');
+$expect->calledToolCount(3);
+$expect->didNotCallTool('dangerous_function');
+```
+
+### LLM-as-Judge
+
+```php
+$expect->judgedBy($judge, 'Is this response helpful and accurate?');
+$expect->judgedBy($judge, 'Is this concise?', threshold: 0.9);
+```
+
+### Conversation (multi-turn)
+
+```php
+$expect->turnCount(2);
+$expect->usedTool('calculate');
+$expect->conversationContains('42');
+```
+
+### Custom
+
+```php
+$expect->assert(new MyCustomAssertion());
+```
+
+## Tool Call Testing
+
+Test that your LLM calls tools with the right parameters — without executing a full conversation loop.
 
 ```php
 $tools = [
@@ -190,60 +101,212 @@ $tools = [
             'type' => 'object',
             'properties' => [
                 'location' => ['type' => 'string'],
-                'unit' => ['type' => 'string', 'enum' => ['celsius', 'fahrenheit']],
             ],
             'required' => ['location'],
         ],
     ],
 ];
 
-return LlmEval::create('tool-test')
+$results = LlmEval::create('tool-test')
     ->provider($provider)
     ->option('tools', $tools)
     ->dataset($dataset)
-    ->assertions(function ($expect, $testCase) {
+    ->assertions(function ($expect): void {
         $expect->calledTool('get_weather');
         $expect->toolCallHasParam('get_weather', 'location', 'Paris');
-    });
+    })
+    ->runAll();
+```
+
+## Multi-Turn Conversations
+
+Test agentic workflows where the LLM calls tools, receives results, and continues reasoning.
+
+```php
+use Aysnc\AI\LlmEval\Dataset\Dataset;
+use Aysnc\AI\LlmEval\LlmEval;
+use Aysnc\AI\LlmEval\Providers\CallableToolExecutor;
+use Aysnc\AI\LlmEval\Providers\ToolCall;
+use Aysnc\AI\LlmEval\Providers\ToolResult;
+
+$tools = [
+    [
+        'name' => 'calculate',
+        'description' => 'Evaluate a math expression',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'expression' => ['type' => 'string'],
+            ],
+            'required' => ['expression'],
+        ],
+    ],
+];
+
+$executor = new CallableToolExecutor([
+    'calculate' => function (ToolCall $tc): ToolResult {
+        $expr = $tc->getParam('expression');
+        $result = match ($expr) {
+            '6 * 7', '6*7' => '42',
+            default => 'unknown',
+        };
+
+        return new ToolResult($tc->id, $result);
+    },
+]);
+
+$dataset = Dataset::fromArray([
+    ['prompt' => 'Use the calculate tool to compute 6 * 7.', 'expected' => '42'],
+]);
+
+$results = LlmEval::createConversation('math-agent')
+    ->provider($provider)
+    ->withTools($tools)
+    ->executor($executor)
+    ->dataset($dataset)
+    ->assertions(function ($expect, $testCase): void {
+        $expect->contains($testCase->getExpected('default'))
+            ->usedTool('calculate')
+            ->turnCount(2);
+    })
+    ->runAll();
+```
+
+### Follow-up Replies
+
+Add a `replies` key to your dataset rows to send follow-up messages after the initial prompt. Each reply goes through the same tool loop.
+
+```php
+$dataset = Dataset::fromArray([
+    [
+        'prompt' => 'What is the weather in Paris?',
+        'replies' => ['Now check Tokyo', 'Which city was warmer?'],
+        'expected' => 'Paris',
+    ],
+]);
+
+$results = LlmEval::createConversation('multi-turn')
+    ->provider($provider)
+    ->withTools($tools)
+    ->executor($executor)
+    ->dataset($dataset)
+    ->assertions(function ($expect): void {
+        $expect->usedTool('get_weather')
+            ->conversationContains('Tokyo');
+    })
+    ->runAll();
 ```
 
 ## LLM-as-Judge
 
-Use one LLM to evaluate another's responses:
+Use one LLM to evaluate another's response quality.
 
 ```php
-$llm = new AnthropicProvider('api-key');
-$judge = new AnthropicProvider('judge-api-key');
+$judge = new AnthropicProvider(getenv('ANTHROPIC_API_KEY'));
 
-return LlmEval::create('quality-check')
-    ->provider($llm)
+$results = LlmEval::create('quality-check')
+    ->provider($provider)
     ->dataset($dataset)
-    ->assertions(function ($expect) use ($judge) {
+    ->assertions(function ($expect) use ($judge): void {
         $expect->judgedBy(
             judge: $judge,
             criteria: 'Is this response helpful, accurate, and concise?',
-            passingScore: 0.8
+            threshold: 0.8,
         );
-    });
+    })
+    ->runAll();
 ```
 
-## Parallel Execution
+## CLI Runner
+
+```bash
+# Initialize config file
+vendor/bin/llm-eval init
+
+# Run all evaluations
+vendor/bin/llm-eval run
+
+# Run a specific evaluation
+vendor/bin/llm-eval run my-test
+
+# Run in parallel
+vendor/bin/llm-eval run --parallel --concurrency=10
+
+# Clear response cache
+vendor/bin/llm-eval cache:clear
+```
+
+## Providers
+
+### Anthropic Claude
+
+Direct API access. Get your key at [console.anthropic.com](https://console.anthropic.com).
 
 ```php
-use Aysnc\AI\LlmEval\Providers\CachingProvider;
+use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
 
-// Wrap provider with caching
-$cachedProvider = new CachingProvider($provider, $cache);
+$provider = new AnthropicProvider(
+    apiKey: getenv('ANTHROPIC_API_KEY'),
+);
+```
 
-$results = LlmEval::create('large-test')
-    ->provider($cachedProvider)
-    ->dataset($largeDataset)
+### AWS Bedrock
+
+Uses the Converse API — works with Claude, Titan, Llama, Mistral, and other Bedrock models. Requires `composer require aws/aws-sdk-php`. See [AWS Bedrock docs](https://docs.aws.amazon.com/bedrock/).
+
+```php
+use Aysnc\AI\LlmEval\Providers\BedrockProvider;
+
+// Explicit credentials
+$provider = new BedrockProvider(
+    region: 'us-east-1',
+    accessKeyId: 'AKIA...',
+    secretAccessKey: 'secret...',
+);
+
+// Or default credential chain (env vars, ~/.aws/credentials, IAM role)
+$provider = new BedrockProvider(region: 'us-east-1');
+```
+
+## Caching & Parallel Execution
+
+Wrap any provider with `CachingProvider` for deterministic, cost-free reruns. Combine with `runAllParallel()` for speed.
+
+```php
+use Aysnc\AI\LlmEval\Cache\CachingProvider;
+use Aysnc\AI\LlmEval\Cache\FilesystemCache;
+
+$cache = new FilesystemCache(__DIR__ . '/.llm-cache');
+$cached = new CachingProvider($provider, $cache);
+
+$results = LlmEval::create('large-eval')
+    ->provider($cached)
+    ->dataset($dataset)
     ->assertions($assertions)
     ->runAllParallel(concurrency: 10);
 ```
 
-## Current Limitations
+## Configuration
 
-- **Single-turn only**: Cannot test multi-turn conversations with tool execution loops (planned for Phase 6)
-- **No streaming support**: Responses are loaded fully before evaluation
-- **Limited providers**: Currently Anthropic and Bedrock only (OpenAI, Ollama planned)
+The CLI reads `llm-eval.php` from your project root:
+
+```php
+<?php
+
+use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
+
+return [
+    'provider' => new AnthropicProvider(getenv('ANTHROPIC_API_KEY')),
+    'directory' => __DIR__ . '/evals',
+    'cache' => true,
+    'cacheTtl' => 0,
+    'parallel' => false,
+    'concurrency' => 5,
+];
+```
+
+## Requirements
+
+- PHP 8.3+
+- `guzzlehttp/guzzle` ^7.10
+- `aws/aws-sdk-php` ^3.0 (optional, for Bedrock)
