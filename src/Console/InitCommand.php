@@ -114,10 +114,7 @@ return LlmEval::create('sample-eval')
     ->provider($provider)
     ->dataset($dataset)
     ->assertions(function ($expect, $testCase): void {
-        $expected = $testCase->getExpected('default');
-        if ($expected !== null) {
-            $expect->contains($expected);
-        }
+        $expect->contains($testCase->getExpected());
     });
 
 PHP;

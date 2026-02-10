@@ -6,11 +6,14 @@ namespace Aysnc\AI\LlmEval\Tests\Cache;
 
 use Aysnc\AI\LlmEval\Cache\CachingProvider;
 use Aysnc\AI\LlmEval\Cache\FilesystemCache;
+use Aysnc\AI\LlmEval\Providers\AsyncConversableProviderInterface;
 use Aysnc\AI\LlmEval\Providers\AsyncProviderInterface;
+use Aysnc\AI\LlmEval\Providers\Message;
 use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 use Aysnc\AI\LlmEval\Providers\Response;
 use GuzzleHttp\Promise\FulfilledPromise;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 class CachingProviderTest extends TestCase
 {
@@ -165,6 +168,94 @@ class CachingProviderTest extends TestCase
         $this->assertSame(1, $callCount);
     }
 
+    public function testCompleteWithMessagesCachesResponse(): void
+    {
+        $callCount = 0;
+        $innerProvider = $this->createConversableProvider(function () use (&$callCount): Response {
+            $callCount++;
+
+            return new Response(text: 'conversed', model: 'test');
+        });
+
+        $provider = new CachingProvider($innerProvider, $this->cache);
+
+        $messages = [Message::user('Hello'), Message::user('World')];
+
+        // First call hits the provider
+        $response1 = $provider->completeWithMessages($messages);
+        $this->assertSame(1, $callCount);
+        $this->assertSame('conversed', $response1->text);
+
+        // Second call returns cached response
+        $response2 = $provider->completeWithMessages($messages);
+        $this->assertSame(1, $callCount);
+        $this->assertSame('conversed', $response2->text);
+    }
+
+    public function testCompleteWithMessagesAsyncCachesResponse(): void
+    {
+        $callCount = 0;
+        $innerProvider = $this->createConversableProvider(function () use (&$callCount): Response {
+            $callCount++;
+
+            return new Response(text: 'async conversed', model: 'test');
+        });
+
+        $provider = new CachingProvider($innerProvider, $this->cache);
+
+        $messages = [Message::user('Hello')];
+
+        // First call hits the provider
+        $response1 = $provider->completeWithMessagesAsync($messages)->wait();
+        $this->assertSame(1, $callCount);
+        $this->assertInstanceOf(Response::class, $response1);
+        $this->assertSame('async conversed', $response1->text);
+
+        // Second call returns cached
+        $response2 = $provider->completeWithMessagesAsync($messages)->wait();
+        $this->assertSame(1, $callCount);
+        $this->assertInstanceOf(Response::class, $response2);
+    }
+
+    public function testCompleteWithMessagesDifferentMessagesAreCachedSeparately(): void
+    {
+        $callCount = 0;
+        $innerProvider = $this->createConversableProvider(function () use (&$callCount): Response {
+            $callCount++;
+
+            return new Response(text: 'response', model: 'test');
+        });
+
+        $provider = new CachingProvider($innerProvider, $this->cache);
+
+        $provider->completeWithMessages([Message::user('prompt1')]);
+        $provider->completeWithMessages([Message::user('prompt2')]);
+
+        $this->assertSame(2, $callCount);
+    }
+
+    public function testCompleteWithMessagesThrowsForNonConversableProvider(): void
+    {
+        $innerProvider = $this->createMock(ProviderInterface::class);
+        $provider = new CachingProvider($innerProvider, $this->cache);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Inner provider does not support completeWithMessages()');
+
+        $provider->completeWithMessages([Message::user('Hello')]);
+    }
+
+    public function testCompleteWithMessagesAsyncThrowsForNonConversableProvider(): void
+    {
+        $innerProvider = $this->createMock(ProviderInterface::class);
+        $provider = new CachingProvider($innerProvider, $this->cache);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Inner provider does not support completeWithMessages()');
+
+        $provider->completeWithMessagesAsync([Message::user('Hello')])->wait();
+    }
+
     /**
      * Create a sync provider mock.
      *
@@ -191,6 +282,26 @@ class CachingProviderTest extends TestCase
             ->willReturnCallback($callback);
         $provider->method('completeAsync')
             ->willReturnCallback(fn (string $prompt) => new FulfilledPromise($callback($prompt)));
+
+        return $provider;
+    }
+
+    /**
+     * Create an async conversable provider mock.
+     *
+     * @param callable(): Response $callback
+     */
+    private function createConversableProvider(callable $callback): AsyncConversableProviderInterface
+    {
+        $provider = $this->createMock(AsyncConversableProviderInterface::class);
+        $provider->method('complete')
+            ->willReturnCallback($callback);
+        $provider->method('completeAsync')
+            ->willReturnCallback(fn () => new FulfilledPromise($callback()));
+        $provider->method('completeWithMessages')
+            ->willReturnCallback($callback);
+        $provider->method('completeWithMessagesAsync')
+            ->willReturnCallback(fn () => new FulfilledPromise($callback()));
 
         return $provider;
     }

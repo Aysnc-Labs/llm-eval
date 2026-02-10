@@ -23,7 +23,7 @@ use RuntimeException;
  *   $response = $provider->complete('What is 2+2?');
  *   echo $response->text; // "4"
  */
-class AnthropicProvider implements AsyncProviderInterface
+class AnthropicProvider implements AsyncConversableProviderInterface
 {
     private const string API_URL = 'https://api.anthropic.com/v1/messages';
     private const string API_VERSION = '2023-06-01';
@@ -62,15 +62,35 @@ class AnthropicProvider implements AsyncProviderInterface
      */
     public function completeAsync(string $prompt, array $options = []): PromiseInterface
     {
+        return $this->completeWithMessagesAsync([Message::user($prompt)], $options);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function completeWithMessages(array $messages, array $options = []): Response
+    {
+        $result = $this->completeWithMessagesAsync($messages, $options)->wait();
+
+        if (!$result instanceof Response) {
+            throw new RuntimeException('Unexpected response type from async completion');
+        }
+
+        return $result;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function completeWithMessagesAsync(array $messages, array $options = []): PromiseInterface
+    {
         $model = is_string($options['model'] ?? null) ? $options['model'] : self::DEFAULT_MODEL;
         $maxTokens = is_int($options['max_tokens'] ?? null) ? $options['max_tokens'] : self::DEFAULT_MAX_TOKENS;
 
         $json = [
             'model' => $model,
             'max_tokens' => $maxTokens,
-            'messages' => [
-                ['role' => 'user', 'content' => $prompt],
-            ],
+            'messages' => $this->convertMessages($messages),
         ];
 
         // Add tools if provided (Anthropic format)
@@ -100,6 +120,56 @@ class AnthropicProvider implements AsyncProviderInterface
             /** @var array<string, mixed> $data */
             return $this->buildResponse($data, $model);
         });
+    }
+
+    /**
+     * Convert Message objects to Anthropic API message format.
+     *
+     * @param array<Message> $messages
+     * @return array<array<string, mixed>>
+     */
+    private function convertMessages(array $messages): array
+    {
+        $converted = [];
+
+        foreach ($messages as $message) {
+            if ($message->hasToolResults()) {
+                // Tool results are sent as user role with tool_result content blocks
+                $content = [];
+                foreach ($message->toolResults as $result) {
+                    $block = [
+                        'type' => 'tool_result',
+                        'tool_use_id' => $result->toolCallId,
+                        'content' => $result->content,
+                    ];
+                    if ($result->isError) {
+                        $block['is_error'] = true;
+                    }
+                    $content[] = $block;
+                }
+                $converted[] = ['role' => 'user', 'content' => $content];
+            } elseif ($message->role === Role::Assistant && $message->hasToolCalls()) {
+                // Assistant message with tool calls needs text + tool_use content blocks
+                $content = [];
+                if ($message->text !== '') {
+                    $content[] = ['type' => 'text', 'text' => $message->text];
+                }
+                foreach ($message->toolCalls as $toolCall) {
+                    $content[] = [
+                        'type' => 'tool_use',
+                        'id' => $toolCall->id,
+                        'name' => $toolCall->name,
+                        'input' => $toolCall->input,
+                    ];
+                }
+                $converted[] = ['role' => 'assistant', 'content' => $content];
+            } else {
+                // Simple text message (user or assistant)
+                $converted[] = ['role' => $message->role->value, 'content' => $message->text];
+            }
+        }
+
+        return $converted;
     }
 
     /**

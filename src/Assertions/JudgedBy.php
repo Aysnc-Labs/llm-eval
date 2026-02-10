@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Aysnc\AI\LlmEval\Assertions;
 
+use Aysnc\AI\LlmEval\Conversation\Conversation;
 use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 use Override;
 
@@ -19,7 +20,7 @@ use Override;
  * This enables subjective evaluations like "is this helpful?" or
  * "is the tone appropriate?" that can't be checked with simple assertions.
  */
-class JudgedBy implements AssertionInterface
+class JudgedBy implements AssertionInterface, ConversationAwareAssertion
 {
     private const string JUDGE_PROMPT = <<<'PROMPT'
         You are evaluating an LLM response against specific criteria.
@@ -42,10 +43,37 @@ class JudgedBy implements AssertionInterface
         {"pass": true/false, "score": 0.0-1.0, "reasoning": "brief explanation"}
         PROMPT;
 
+    private const string CONVERSATION_JUDGE_PROMPT = <<<'PROMPT'
+        You are evaluating an LLM response against specific criteria.
+        This response is part of a multi-turn conversation.
+
+        ## Conversation History
+        %s
+
+        ## Current Prompt
+        %s
+
+        ## Response to Evaluate
+        %s
+
+        ## Evaluation Criteria
+        %s
+
+        ## Instructions
+        Evaluate the response in context of the full conversation.
+        Consider whether it correctly builds on previous turns.
+        Rate your confidence from 0.0 to 1.0
+
+        Respond in this exact JSON format:
+        {"pass": true/false, "score": 0.0-1.0, "reasoning": "brief explanation"}
+        PROMPT;
+
     /**
      * The original prompt (set before check() is called).
      */
     private string $originalPrompt = '';
+
+    private ?Conversation $conversation = null;
 
     /**
      * @param ProviderInterface $judge The LLM provider to use as judge.
@@ -72,15 +100,22 @@ class JudgedBy implements AssertionInterface
         return $clone;
     }
 
+    /**
+     * Inject the full Conversation for context-aware judging.
+     */
+    #[Override]
+    public function withConversation(Conversation $conversation): self
+    {
+        $clone = clone $this;
+        $clone->conversation = $conversation;
+
+        return $clone;
+    }
+
     #[Override]
     public function check(string $text): AssertionResult
     {
-        $judgePrompt = sprintf(
-            self::JUDGE_PROMPT,
-            $this->originalPrompt ?: '(not provided)',
-            $text,
-            $this->criteria,
-        );
+        $judgePrompt = $this->buildJudgePrompt($text);
 
         $options = [];
         if ($this->model !== null) {
@@ -117,6 +152,61 @@ class JudgedBy implements AssertionInterface
     public function getDescription(): string
     {
         return sprintf('Judged by LLM: "%s" (threshold: %.0f%%)', $this->criteria, $this->threshold * 100);
+    }
+
+    /**
+     * Build the judge prompt, using conversation context when available.
+     */
+    private function buildJudgePrompt(string $text): string
+    {
+        if ($this->conversation !== null) {
+            return sprintf(
+                self::CONVERSATION_JUDGE_PROMPT,
+                $this->formatConversationHistory(),
+                $this->originalPrompt ?: '(not provided)',
+                $text,
+                $this->criteria,
+            );
+        }
+
+        return sprintf(
+            self::JUDGE_PROMPT,
+            $this->originalPrompt ?: '(not provided)',
+            $text,
+            $this->criteria,
+        );
+    }
+
+    /**
+     * Format conversation messages as readable history for the judge.
+     */
+    private function formatConversationHistory(): string
+    {
+        assert($this->conversation !== null);
+
+        $lines = [];
+        foreach ($this->conversation->getMessagesByTurn() as $turn => $messages) {
+            $lines[] = "--- Turn {$turn} ---";
+
+            foreach ($messages as $message) {
+                $role = $message->role === \Aysnc\AI\LlmEval\Providers\Role::User ? 'User' : 'Assistant';
+
+                if ($message->text !== '') {
+                    $lines[] = "{$role}: {$message->text}";
+                }
+
+                foreach ($message->toolCalls as $tc) {
+                    $input = json_encode($tc->input, JSON_THROW_ON_ERROR);
+                    $lines[] = "Assistant: [called tool {$tc->name} with {$input}]";
+                }
+
+                foreach ($message->toolResults as $tr) {
+                    $lines[] = "Tool result: {$tr->content}";
+                }
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

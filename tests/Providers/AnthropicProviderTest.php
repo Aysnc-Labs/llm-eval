@@ -11,8 +11,10 @@ declare(strict_types=1);
 namespace Aysnc\AI\LlmEval\Tests\Providers;
 
 use Aysnc\AI\LlmEval\Providers\AnthropicProvider;
+use Aysnc\AI\LlmEval\Providers\Message;
 use Aysnc\AI\LlmEval\Providers\Response;
 use Aysnc\AI\LlmEval\Providers\ToolCall;
+use Aysnc\AI\LlmEval\Providers\ToolResult;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -239,6 +241,204 @@ class AnthropicProviderTest extends TestCase
 
         $this->assertTrue($response->hasToolCalls());
         $this->assertSame([], $response->toolCalls[0]->input);
+    }
+
+    /**
+     * Test completeWithMessages with a simple user message.
+     */
+    public function testCompleteWithMessagesSimple(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'The answer is 4.'],
+            ],
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $response = $provider->completeWithMessages([Message::user('What is 2+2?')]);
+
+        $this->assertSame('The answer is 4.', $response->text);
+    }
+
+    /**
+     * Test completeWithMessages with multi-turn conversation.
+     */
+    public function testCompleteWithMessagesMultiTurn(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'Paris is the capital of France.'],
+            ],
+            'usage' => ['input_tokens' => 20, 'output_tokens' => 10],
+        ];
+
+        $mock = new MockHandler([
+            new GuzzleResponse(200, [], (string) json_encode($mockResponse)),
+        ]);
+        $handlerStack = HandlerStack::create($mock);
+        $client = new Client(['handler' => $handlerStack]);
+
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $messages = [
+            Message::user('What is the capital of France?'),
+            Message::fromResponse(new Response(text: 'The capital is Paris.', model: 'test')),
+            Message::user('Are you sure?'),
+        ];
+
+        $response = $provider->completeWithMessages($messages);
+
+        $this->assertSame('Paris is the capital of France.', $response->text);
+
+        // Verify the request was built with the correct history
+        $lastRequest = $mock->getLastRequest();
+        $this->assertNotNull($lastRequest);
+
+        /** @var array{messages: array<int, array{role: string, content: mixed}>} $body */
+        $body = json_decode($lastRequest->getBody()->getContents(), true);
+        $this->assertCount(3, $body['messages']);
+        $this->assertSame('user', $body['messages'][0]['role']);
+        $this->assertSame('assistant', $body['messages'][1]['role']);
+        $this->assertSame('user', $body['messages'][2]['role']);
+    }
+
+    /**
+     * Test completeWithMessages with tool result messages.
+     */
+    public function testCompleteWithMessagesToolResults(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'The weather in NYC is 72F.'],
+            ],
+            'usage' => ['input_tokens' => 30, 'output_tokens' => 15],
+        ];
+
+        $mock = new MockHandler([
+            new GuzzleResponse(200, [], (string) json_encode($mockResponse)),
+        ]);
+        $handlerStack = HandlerStack::create($mock);
+        $client = new Client(['handler' => $handlerStack]);
+
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $messages = [
+            Message::user('What is the weather in NYC?'),
+            Message::fromResponse(new Response(
+                text: 'Let me check.',
+                model: 'test',
+                toolCalls: [new ToolCall(id: 'toolu_1', name: 'get_weather', input: ['location' => 'NYC'])],
+            )),
+            Message::toolResults([
+                new ToolResult(toolCallId: 'toolu_1', content: '72F and sunny'),
+            ]),
+        ];
+
+        $response = $provider->completeWithMessages($messages);
+
+        $this->assertSame('The weather in NYC is 72F.', $response->text);
+
+        // Verify request format
+        $lastRequest = $mock->getLastRequest();
+        $this->assertNotNull($lastRequest);
+
+        /** @var array{messages: array<int, array{role: string, content: mixed}>} $body */
+        $body = json_decode($lastRequest->getBody()->getContents(), true);
+        $this->assertCount(3, $body['messages']);
+
+        // First message: user text
+        $this->assertSame('user', $body['messages'][0]['role']);
+        $this->assertSame('What is the weather in NYC?', $body['messages'][0]['content']);
+
+        // Second message: assistant with tool_use blocks
+        $this->assertSame('assistant', $body['messages'][1]['role']);
+        /** @var array<int, array<string, mixed>> $assistantContent */
+        $assistantContent = $body['messages'][1]['content'];
+        $this->assertSame('text', $assistantContent[0]['type']);
+        $this->assertSame('tool_use', $assistantContent[1]['type']);
+        $this->assertSame('toolu_1', $assistantContent[1]['id']);
+
+        // Third message: user with tool_result blocks
+        $this->assertSame('user', $body['messages'][2]['role']);
+        /** @var array<int, array<string, mixed>> $toolResultContent */
+        $toolResultContent = $body['messages'][2]['content'];
+        $this->assertSame('tool_result', $toolResultContent[0]['type']);
+        $this->assertSame('toolu_1', $toolResultContent[0]['tool_use_id']);
+        $this->assertSame('72F and sunny', $toolResultContent[0]['content']);
+    }
+
+    /**
+     * Test that tool result errors include is_error flag.
+     */
+    public function testCompleteWithMessagesToolResultError(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'Sorry, the tool failed.'],
+            ],
+            'usage' => ['input_tokens' => 20, 'output_tokens' => 10],
+        ];
+
+        $mock = new MockHandler([
+            new GuzzleResponse(200, [], (string) json_encode($mockResponse)),
+        ]);
+        $handlerStack = HandlerStack::create($mock);
+        $client = new Client(['handler' => $handlerStack]);
+
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        $messages = [
+            Message::user('Check the weather'),
+            Message::fromResponse(new Response(
+                text: '',
+                model: 'test',
+                toolCalls: [new ToolCall(id: 'toolu_1', name: 'get_weather', input: [])],
+            )),
+            Message::toolResults([
+                new ToolResult(toolCallId: 'toolu_1', content: 'API unavailable', isError: true),
+            ]),
+        ];
+
+        $provider->completeWithMessages($messages);
+
+        $lastRequest = $mock->getLastRequest();
+        $this->assertNotNull($lastRequest);
+
+        /** @var array{messages: array<int, array{role: string, content: mixed}>} $body */
+        $body = json_decode($lastRequest->getBody()->getContents(), true);
+
+        /** @var array<int, array<string, mixed>> $errorContent */
+        $errorContent = $body['messages'][2]['content'];
+        $this->assertTrue($errorContent[0]['is_error']);
+    }
+
+    /**
+     * Test that completeAsync delegates to completeWithMessagesAsync.
+     */
+    public function testCompleteAsyncDelegatesToMessages(): void
+    {
+        $mockResponse = [
+            'model' => 'claude-sonnet-4-20250514',
+            'content' => [
+                ['type' => 'text', 'text' => 'Delegated response'],
+            ],
+            'usage' => ['input_tokens' => 5, 'output_tokens' => 3],
+        ];
+
+        $client = $this->createMockClient($mockResponse);
+        $provider = new AnthropicProvider('test-api-key', $client);
+
+        // completeAsync should work the same as before (it delegates internally)
+        $response = $provider->completeAsync('Test prompt')->wait();
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertSame('Delegated response', $response->text);
     }
 
     /**

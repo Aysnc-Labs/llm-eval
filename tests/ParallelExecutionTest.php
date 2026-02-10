@@ -40,10 +40,7 @@ class ParallelExecutionTest extends TestCase
             ->provider($provider)
             ->dataset($dataset)
             ->assertions(function ($expect, EvalTestCase $case): void {
-                $expected = $case->getExpected('default');
-                if ($expected !== null) {
-                    $expect->contains($expected);
-                }
+                $expect->contains($case->getExpected());
             })
             ->runAllParallel();
 
