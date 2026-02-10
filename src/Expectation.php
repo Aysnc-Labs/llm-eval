@@ -52,9 +52,15 @@ class Expectation
 
     /**
      * Assert that the response contains a substring.
+     *
+     * If $needle is null, the assertion is skipped (useful with nullable getExpected()).
      */
-    public function contains(string $needle, bool $caseSensitive = true): self
+    public function contains(?string $needle, bool $caseSensitive = true): self
     {
+        if ($needle === null) {
+            return $this;
+        }
+
         $this->assertions[] = new Contains($needle, $caseSensitive);
 
         return $this;

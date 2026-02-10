@@ -193,10 +193,7 @@ $results = LlmEval::createConversation('multi-turn')
     ->executor($executor)
     ->dataset($dataset)
     ->assertions(function ($expect, $testCase): void {
-        $expected = $testCase->getExpected();
-        if ($expected !== null) {
-            $expect->contains($expected);
-        }
+        $expect->contains($testCase->getExpected());
 
         // Only assert tool usage on turns that call the tool.
         if ($testCase->metadata['turn'] <= 2) {

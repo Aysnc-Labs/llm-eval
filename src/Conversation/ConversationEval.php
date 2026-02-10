@@ -51,11 +51,8 @@ use Override;
  *       ->withTools($tools)
  *       ->dataset($dataset)
  *       ->assertions(function ($expect, $testCase) {
- *           $expected = $testCase->getExpected();
- *           if ($expected !== null) {
- *               $expect->contains($expected);
- *           }
- *           $expect->usedTool('get_weather');
+ *           $expect->contains($testCase->getExpected())
+ *               ->usedTool('get_weather');
  *       })
  *       ->runAll();
  */

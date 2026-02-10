@@ -51,10 +51,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected();
-                if ($expected !== null) {
-                    $expect->contains($expected);
-                }
+                $expect->contains($testCase->getExpected());
             })
             ->runAll();
 
@@ -339,10 +336,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected();
-                if ($expected !== null) {
-                    $expect->contains($expected);
-                }
+                $expect->contains($testCase->getExpected());
             })
             ->runAll();
 
@@ -377,10 +371,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected();
-                if ($expected !== null) {
-                    $expect->contains($expected);
-                }
+                $expect->contains($testCase->getExpected());
             })
             ->runAll();
 
@@ -411,10 +402,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected();
-                if ($expected !== null) {
-                    $expect->contains($expected);
-                }
+                $expect->contains($testCase->getExpected());
             })
             ->runAll();
 
@@ -463,10 +451,7 @@ class ConversationEvalTest extends TestCase
             ->withTools([['name' => 'get_weather']])
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected();
-                if ($expected !== null) {
-                    $expect->contains($expected);
-                }
+                $expect->contains($testCase->getExpected());
             })
             ->runAll();
 
