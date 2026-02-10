@@ -14,6 +14,7 @@ use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
 use Aysnc\AI\LlmEval\Assertions\CalledTool;
 use Aysnc\AI\LlmEval\Assertions\CalledToolCount;
 use Aysnc\AI\LlmEval\Assertions\Contains;
+use Aysnc\AI\LlmEval\Assertions\ConversationContains;
 use Aysnc\AI\LlmEval\Assertions\DidNotCallTool;
 use Aysnc\AI\LlmEval\Assertions\IsJson;
 use Aysnc\AI\LlmEval\Assertions\JudgedBy;
@@ -22,6 +23,8 @@ use Aysnc\AI\LlmEval\Assertions\MaxLength;
 use Aysnc\AI\LlmEval\Assertions\MinLength;
 use Aysnc\AI\LlmEval\Assertions\NotContains;
 use Aysnc\AI\LlmEval\Assertions\ToolCallHasParam;
+use Aysnc\AI\LlmEval\Assertions\TurnCount;
+use Aysnc\AI\LlmEval\Assertions\UsedTool;
 use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 
 /**
@@ -188,6 +191,48 @@ class Expectation
         } else {
             $this->assertions[] = new ToolCallHasParam($toolName, $paramName, $value);
         }
+
+        return $this;
+    }
+
+    /**
+     * Assert the number of LLM calls (turns) in a conversation.
+     *
+     * Only works with ConversationEval. Throws LogicException if used
+     * with a regular LlmEval (same pattern as calledTool).
+     */
+    public function turnCount(int $expected): self
+    {
+        $this->assertions[] = new TurnCount($expected);
+
+        return $this;
+    }
+
+    /**
+     * Assert that a tool was used in any turn of a conversation.
+     *
+     * Unlike calledTool() which checks the final response, this checks
+     * across ALL responses in the conversation.
+     *
+     * Only works with ConversationEval.
+     */
+    public function usedTool(string $toolName): self
+    {
+        $this->assertions[] = new UsedTool($toolName);
+
+        return $this;
+    }
+
+    /**
+     * Assert that text appears in any message of the conversation.
+     *
+     * Checks all messages (user and assistant) for the needle.
+     *
+     * Only works with ConversationEval.
+     */
+    public function conversationContains(string $needle): self
+    {
+        $this->assertions[] = new ConversationContains($needle);
 
         return $this;
     }

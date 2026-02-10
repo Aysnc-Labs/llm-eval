@@ -13,6 +13,7 @@ namespace Aysnc\AI\LlmEval;
 use Aysnc\AI\LlmEval\Assertions\AssertionInterface;
 use Aysnc\AI\LlmEval\Assertions\JudgedBy;
 use Aysnc\AI\LlmEval\Assertions\ResponseAwareAssertion;
+use Aysnc\AI\LlmEval\Conversation\ConversationEval;
 use Aysnc\AI\LlmEval\Dataset\Dataset;
 use Aysnc\AI\LlmEval\Dataset\TestCase;
 use Aysnc\AI\LlmEval\Providers\AsyncProviderInterface;
@@ -88,9 +89,19 @@ class LlmEval
     }
 
     /**
+     * Create a conversation evaluation for multi-turn scenarios.
+     *
+     * @param string $name A descriptive name for this evaluation.
+     */
+    public static function createConversation(string $name): ConversationEval
+    {
+        return ConversationEval::create($name);
+    }
+
+    /**
      * Set the LLM provider to use.
      */
-    public function provider(ProviderInterface $provider): self
+    public function provider(ProviderInterface $provider): static
     {
         $this->provider = $provider;
 
@@ -100,7 +111,7 @@ class LlmEval
     /**
      * Set the prompt to send to the LLM.
      */
-    public function prompt(string $prompt): self
+    public function prompt(string $prompt): static
     {
         $this->prompt = $prompt;
 
@@ -110,7 +121,7 @@ class LlmEval
     /**
      * Set the model to use.
      */
-    public function model(string $model): self
+    public function model(string $model): static
     {
         $this->options['model'] = $model;
 
@@ -120,7 +131,7 @@ class LlmEval
     /**
      * Set the maximum tokens for the response.
      */
-    public function maxTokens(int $maxTokens): self
+    public function maxTokens(int $maxTokens): static
     {
         $this->options['max_tokens'] = $maxTokens;
 
@@ -130,7 +141,7 @@ class LlmEval
     /**
      * Set a custom option.
      */
-    public function option(string $key, mixed $value): self
+    public function option(string $key, mixed $value): static
     {
         $this->options[$key] = $value;
 
@@ -140,7 +151,7 @@ class LlmEval
     /**
      * Set a dataset for batch evaluations.
      */
-    public function dataset(Dataset $dataset): self
+    public function dataset(Dataset $dataset): static
     {
         $this->dataset = $dataset;
 
@@ -155,7 +166,7 @@ class LlmEval
      *
      * @param Closure(Expectation, TestCase): void $builder
      */
-    public function assertions(Closure $builder): self
+    public function assertions(Closure $builder): static
     {
         $this->assertionBuilder = $builder;
 
