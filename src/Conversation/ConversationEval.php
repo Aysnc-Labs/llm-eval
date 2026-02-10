@@ -17,6 +17,7 @@ use Aysnc\AI\LlmEval\Dataset\TestCase;
 use Aysnc\AI\LlmEval\Expectation;
 use Aysnc\AI\LlmEval\LlmEval;
 use Aysnc\AI\LlmEval\Providers\ConversableProviderInterface;
+use Aysnc\AI\LlmEval\Providers\ProviderInterface;
 use Aysnc\AI\LlmEval\Providers\Response;
 use Aysnc\AI\LlmEval\Providers\ToolExecutorInterface;
 use Aysnc\AI\LlmEval\Result;
@@ -65,6 +66,12 @@ class ConversationEval extends LlmEval
 
     protected int $maxTurns = 10;
 
+    private ?ProviderInterface $judgeProvider = null;
+
+    private string $judgeCriteria = '';
+
+    private float $judgeThreshold = 0.7;
+
     /**
      * @param string $name A descriptive name for this evaluation.
      */
@@ -102,6 +109,21 @@ class ConversationEval extends LlmEval
     public function withMaxTurns(int $maxTurns): self
     {
         $this->maxTurns = $maxTurns;
+
+        return $this;
+    }
+
+    /**
+     * Run an LLM-as-judge evaluation once after all turns complete.
+     *
+     * Unlike `judgedBy()` inside assertions (which runs per-turn), this runs
+     * once per test case with the full conversation history.
+     */
+    public function judge(ProviderInterface $judge, string $criteria, float $threshold = 0.7): self
+    {
+        $this->judgeProvider = $judge;
+        $this->judgeCriteria = $criteria;
+        $this->judgeThreshold = $threshold;
 
         return $this;
     }
@@ -155,12 +177,18 @@ class ConversationEval extends LlmEval
             // Build turns: initial prompt + replies.
             $turns = $this->buildTurns($testCase);
 
+            $lastResponse = null;
+            $lastPrompt = '';
+
             foreach ($turns as $turnIndex => $turnTestCase) {
                 if ($turnIndex === 0) {
                     $response = $conversation->send($turnTestCase->getPrompt());
                 } else {
                     $response = $conversation->reply($turnTestCase->getPrompt());
                 }
+
+                $lastResponse = $response;
+                $lastPrompt = $turnTestCase->getPrompt();
 
                 $results[] = $this->buildTurnResult(
                     $assertionBuilder,
@@ -171,6 +199,10 @@ class ConversationEval extends LlmEval
                     (int) $turnIndex + 1,
                     count($turns),
                 );
+            }
+
+            if ($this->judgeProvider !== null && $lastResponse !== null) {
+                $results[] = $this->buildJudgeResult($lastResponse, $lastPrompt, $conversation, $caseName);
             }
         }
 
@@ -246,6 +278,30 @@ class ConversationEval extends LlmEval
             : "{$this->name} - {$caseName}";
 
         return Result::fromAssertions($resultName, $response, $assertionResults);
+    }
+
+    /**
+     * Run the conversation-level judge and return a Result.
+     */
+    private function buildJudgeResult(
+        Response $lastResponse,
+        string $lastPrompt,
+        Conversation $conversation,
+        string $caseName,
+    ): Result {
+        assert($this->judgeProvider !== null);
+
+        $assertion = (new JudgedBy($this->judgeProvider, $this->judgeCriteria, $this->judgeThreshold))
+            ->withOriginalPrompt($lastPrompt)
+            ->withConversation($conversation);
+
+        $assertionResult = $assertion->check($lastResponse->text);
+
+        return Result::fromAssertions(
+            "{$this->name} - {$caseName} - Judge",
+            $lastResponse,
+            [$assertionResult],
+        );
     }
 
     /**

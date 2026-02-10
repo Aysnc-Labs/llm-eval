@@ -459,6 +459,87 @@ class ConversationEvalTest extends TestCase
         $this->assertSame(2, $result->totalCount());
     }
 
+    public function testJudgeRunsOnceAfterAllTurns(): void
+    {
+        $provider = $this->createScriptedProvider([
+            new Response(text: 'Paris is 22C.', model: 'test'),
+            new Response(text: 'Tokyo is 18C.', model: 'test'),
+            new Response(text: 'Paris is warmer.', model: 'test'),
+        ]);
+
+        $judgeProvider = $this->createMock(ProviderInterface::class);
+        $judgeProvider->expects($this->once())
+            ->method('complete')
+            ->with($this->callback(function (string $prompt): bool {
+                // The judge should receive conversation history.
+                return str_contains($prompt, 'Turn 1')
+                    && str_contains($prompt, 'Turn 2')
+                    && str_contains($prompt, 'Turn 3')
+                    && str_contains($prompt, 'warmer city');
+            }))
+            ->willReturn(new Response(
+                text: '{"pass": true, "score": 0.95, "reasoning": "Correctly identified Paris."}',
+                model: 'test',
+            ));
+
+        $dataset = Dataset::fromArray([
+            [
+                'turns' => [
+                    ['prompt' => 'Weather in Paris?', 'expected' => '22'],
+                    ['prompt' => 'Weather in Tokyo?', 'expected' => '18'],
+                    ['prompt' => 'Which is warmer?', 'expected' => 'Paris'],
+                ],
+                'name' => 'weather-compare',
+            ],
+        ]);
+
+        $result = ConversationEval::create('judge-test')
+            ->provider($provider)
+            ->executor(new CallableToolExecutor([]))
+            ->dataset($dataset)
+            ->assertions(function ($expect, $testCase): void {
+                $expect->contains($testCase->getExpected());
+            })
+            ->judge($judgeProvider, 'Did the model correctly identify the warmer city?')
+            ->runAll();
+
+        $this->assertTrue($result->passed);
+        // 3 turn results + 1 judge result.
+        $this->assertSame(4, $result->totalCount());
+        $this->assertStringContainsString('Judge', $result->results[3]->name);
+        $this->assertStringContainsString('weather-compare', $result->results[3]->name);
+    }
+
+    public function testJudgeNotCalledWhenNotSet(): void
+    {
+        $provider = $this->createScriptedProvider([
+            new Response(text: 'Hi!', model: 'test'),
+            new Response(text: 'Good.', model: 'test'),
+        ]);
+
+        $dataset = Dataset::fromArray([
+            [
+                'turns' => [
+                    ['prompt' => 'Hello', 'expected' => 'Hi'],
+                    ['prompt' => 'How are you?', 'expected' => 'Good'],
+                ],
+            ],
+        ]);
+
+        $result = ConversationEval::create('no-judge')
+            ->provider($provider)
+            ->executor(new CallableToolExecutor([]))
+            ->dataset($dataset)
+            ->assertions(function ($expect, $testCase): void {
+                $expect->contains($testCase->getExpected());
+            })
+            ->runAll();
+
+        $this->assertTrue($result->passed);
+        // Only 2 turn results, no judge result.
+        $this->assertSame(2, $result->totalCount());
+    }
+
     /**
      * @param array<Response> $responses
      */

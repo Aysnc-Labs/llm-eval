@@ -239,7 +239,7 @@ $results = LlmEval::createConversation('math-agent')
 
 Use a `turns` array to define multi-turn conversations. Each turn has its own `prompt` and optional `expected` values for per-turn assertions. Use `getTurn()` to access the 1-indexed turn number.
 
-In multi-turn conversations, the judge automatically receives the full conversation history — including all tool calls, tool results, and messages — so it can evaluate whether the response correctly builds on previous turns.
+The `judge()` method runs an LLM-as-judge evaluation once after all turns complete. It receives the full conversation history — including all tool calls, tool results, and messages — so it can evaluate whether the model correctly builds on previous turns. Use `assertions()` for per-turn checks and `judge()` for whole-conversation evaluation.
 
 ```php
 $judge = new AnthropicProvider(getenv('ANTHROPIC_API_KEY'));
@@ -259,22 +259,15 @@ $results = LlmEval::createConversation('multi-turn')
     ->withTools($tools)
     ->executor($executor)
     ->dataset($dataset)
-    ->assertions(function ($expect, $testCase) use ($judge): void {
+    ->assertions(function ($expect, $testCase): void {
         $expect->contains($testCase->getExpected());
 
         // Only assert tool usage on turns that call the tool.
         if ($testCase->getTurn() <= 2) {
             $expect->usedTool('get_weather');
         }
-
-        // The judge sees full conversation history — it knows which cities were discussed.
-        if ($testCase->getTurn() === 3) {
-            $expect->judgedBy(
-                judge: $judge,
-                criteria: 'Does the response correctly identify the warmer city based on the earlier temperatures?',
-            );
-        }
     })
+    ->judge($judge, 'Did the model correctly identify the warmer city based on the earlier temperatures?')
     ->runAll();
 ```
 
@@ -360,6 +353,8 @@ $provider = new AnthropicProvider(
 );
 ```
 
+Default model: `claude-sonnet-4-20250514`
+
 ### AWS Bedrock
 
 Uses the Converse API — works with Claude, Titan, Llama, Mistral, and other Bedrock models. Requires `composer require aws/aws-sdk-php`. See [AWS Bedrock docs](https://docs.aws.amazon.com/bedrock/).
@@ -377,6 +372,25 @@ $provider = new BedrockProvider(
 // Or default credential chain (env vars, ~/.aws/credentials, IAM role)
 $provider = new BedrockProvider(region: 'us-east-1');
 ```
+
+Default model: `anthropic.claude-3-5-sonnet-20241022-v2:0`
+
+### Changing the Model
+
+Use `->model()` to override the default model for any provider:
+
+```php
+$results = LlmEval::create('eval-name')
+    ->provider($provider)
+    ->model('claude-opus-4-20250514')
+    ->dataset($dataset)
+    ->assertions($assertions)
+    ->runAll();
+```
+
+This works with both `AnthropicProvider` (use Anthropic model IDs like `claude-opus-4-20250514`) and `BedrockProvider` (use Bedrock model IDs like `anthropic.claude-3-5-sonnet-20241022-v2:0`).
+
+You can also set `->maxTokens(2048)` to override the default max tokens (1024).
 
 ## Caching & Parallel Execution
 
