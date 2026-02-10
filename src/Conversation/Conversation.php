@@ -39,6 +39,11 @@ class Conversation
     /** @var array<Response> */
     private array $responses = [];
 
+    /** @var array<int> Turn number (1-indexed) for each message, parallel to $messages. */
+    private array $messageTurns = [];
+
+    private int $currentTurn = 0;
+
     /** @var array<array<string, mixed>> */
     private array $tools = [];
 
@@ -92,6 +97,8 @@ class Conversation
     {
         $this->messages = [];
         $this->responses = [];
+        $this->messageTurns = [];
+        $this->currentTurn = 1;
 
         return $this->addUserMessageAndComplete($userMessage);
     }
@@ -101,6 +108,8 @@ class Conversation
      */
     public function reply(string $userMessage): Response
     {
+        $this->currentTurn++;
+
         return $this->addUserMessageAndComplete($userMessage);
     }
 
@@ -113,6 +122,22 @@ class Conversation
     }
 
     /**
+     * Get messages grouped by turn number (1-indexed keys).
+     *
+     * @return array<int, array<Message>>
+     */
+    public function getMessagesByTurn(): array
+    {
+        $grouped = [];
+        foreach ($this->messages as $index => $message) {
+            $turn = $this->messageTurns[$index] ?? 1;
+            $grouped[$turn][] = $message;
+        }
+
+        return $grouped;
+    }
+
+    /**
      * @return array<Response>
      */
     public function getResponses(): array
@@ -122,7 +147,7 @@ class Conversation
 
     private function addUserMessageAndComplete(string $userMessage): Response
     {
-        $this->messages[] = Message::user($userMessage);
+        $this->addMessage(Message::user($userMessage));
 
         return $this->runToolLoop();
     }
@@ -140,7 +165,7 @@ class Conversation
             $turns++;
 
             if (! $response->hasToolCalls()) {
-                $this->messages[] = Message::fromResponse($response);
+                $this->addMessage(Message::fromResponse($response));
 
                 return $response;
             }
@@ -152,15 +177,21 @@ class Conversation
             }
 
             // Append assistant message with tool calls, execute tools, append results.
-            $this->messages[] = Message::fromResponse($response);
+            $this->addMessage(Message::fromResponse($response));
 
             $results = [];
             foreach ($response->toolCalls as $toolCall) {
                 $results[] = $this->executor->execute($toolCall);
             }
 
-            $this->messages[] = Message::toolResults($results);
+            $this->addMessage(Message::toolResults($results));
         }
+    }
+
+    private function addMessage(Message $message): void
+    {
+        $this->messages[] = $message;
+        $this->messageTurns[] = $this->currentTurn;
     }
 
     /**

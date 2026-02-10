@@ -185,19 +185,24 @@ class JudgedBy implements AssertionInterface, ConversationAwareAssertion
         assert($this->conversation !== null);
 
         $lines = [];
-        foreach ($this->conversation->getMessages() as $message) {
-            if ($message->hasToolResults()) {
-                continue; // Skip raw tool result messages.
-            }
+        foreach ($this->conversation->getMessagesByTurn() as $turn => $messages) {
+            $lines[] = "--- Turn {$turn} ---";
 
-            $role = $message->role === \Aysnc\AI\LlmEval\Providers\Role::User ? 'User' : 'Assistant';
+            foreach ($messages as $message) {
+                $role = $message->role === \Aysnc\AI\LlmEval\Providers\Role::User ? 'User' : 'Assistant';
 
-            if ($message->text !== '') {
-                $lines[] = "{$role}: {$message->text}";
-            }
+                if ($message->text !== '') {
+                    $lines[] = "{$role}: {$message->text}";
+                }
 
-            foreach ($message->toolCalls as $tc) {
-                $lines[] = "Assistant: [called tool {$tc->name}]";
+                foreach ($message->toolCalls as $tc) {
+                    $input = json_encode($tc->input, JSON_THROW_ON_ERROR);
+                    $lines[] = "Assistant: [called tool {$tc->name} with {$input}]";
+                }
+
+                foreach ($message->toolResults as $tr) {
+                    $lines[] = "Tool result: {$tr->content}";
+                }
             }
         }
 

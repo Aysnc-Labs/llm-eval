@@ -237,9 +237,9 @@ $results = LlmEval::createConversation('math-agent')
 
 ### Multi-Turn Datasets
 
-Use a `turns` array to define multi-turn conversations. Each turn has its own `prompt` and optional `expected` values for per-turn assertions. Each turn's `TestCase` includes a `turn` metadata key (1-indexed) for turn-aware logic.
+Use a `turns` array to define multi-turn conversations. Each turn has its own `prompt` and optional `expected` values for per-turn assertions. Use `getTurn()` to access the 1-indexed turn number.
 
-Turns can also include a `criteria` key for LLM-as-judge evaluation on follow-up turns. When `judgedBy` is used inside a `ConversationEval`, the judge automatically receives the full conversation history, so it can evaluate whether the response correctly builds on previous turns.
+In multi-turn conversations, the judge automatically receives the full conversation history — including all tool calls, tool results, and messages — so it can evaluate whether the response correctly builds on previous turns.
 
 ```php
 $judge = new AnthropicProvider(getenv('ANTHROPIC_API_KEY'));
@@ -249,11 +249,7 @@ $dataset = Dataset::fromArray([
         'turns' => [
             ['prompt' => 'What is the weather in Paris?', 'expected' => '22'],
             ['prompt' => 'Now check Tokyo', 'expected' => '18'],
-            [
-                'prompt' => 'Which city was warmer?',
-                'expected' => 'Paris',
-                'criteria' => 'Does the response correctly identify the warmer city based on the earlier temperatures?',
-            ],
+            ['prompt' => 'Which city was warmer?', 'expected' => 'Paris'],
         ],
     ],
 ]);
@@ -271,10 +267,12 @@ $results = LlmEval::createConversation('multi-turn')
             $expect->usedTool('get_weather');
         }
 
-        // Follow-up turns with criteria get judged for conversational coherence.
-        $criteria = $testCase->getData('criteria') ?? null;
-        if (is_string($criteria)) {
-            $expect->judgedBy($judge, $criteria);
+        // The judge sees full conversation history — it knows which cities were discussed.
+        if ($testCase->getTurn() === 3) {
+            $expect->judgedBy(
+                judge: $judge,
+                criteria: 'Does the response correctly identify the warmer city based on the earlier temperatures?',
+            );
         }
     })
     ->runAll();
