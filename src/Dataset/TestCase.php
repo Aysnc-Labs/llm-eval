@@ -33,7 +33,7 @@ readonly class TestCase
     /**
      * Get an expected value by key.
      */
-    public function getExpected(string $key): ?string
+    public function getExpected(string $key = 'default'): ?string
     {
         return $this->expected[$key] ?? null;
     }
@@ -41,7 +41,7 @@ readonly class TestCase
     /**
      * Check if an expected value exists.
      */
-    public function hasExpected(string $key): bool
+    public function hasExpected(string $key = 'default'): bool
     {
         return isset($this->expected[$key]);
     }

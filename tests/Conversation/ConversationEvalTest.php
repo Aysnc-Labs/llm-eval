@@ -51,7 +51,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }
@@ -277,7 +277,7 @@ class ConversationEvalTest extends TestCase
             ->executor($executor)
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 // Standard assertion on final response.
                 if ($expected !== null) {
                     $expect->contains($expected);
@@ -325,9 +325,8 @@ class ConversationEvalTest extends TestCase
 
         $dataset = Dataset::fromArray([
             [
-                'prompt' => 'Hello',
-                'expected' => 'Hi',
-                'replies' => [
+                'turns' => [
+                    ['prompt' => 'Hello', 'expected' => 'Hi'],
                     ['prompt' => 'How are you?', 'expected' => 'great'],
                     ['prompt' => 'Goodbye', 'expected' => 'Bye'],
                 ],
@@ -340,7 +339,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }
@@ -365,9 +364,8 @@ class ConversationEvalTest extends TestCase
 
         $dataset = Dataset::fromArray([
             [
-                'prompt' => 'Paris weather',
-                'expected' => '22',
-                'replies' => [
+                'turns' => [
+                    ['prompt' => 'Paris weather', 'expected' => '22'],
                     ['prompt' => 'Tokyo weather', 'expected' => '18'],
                     ['prompt' => 'Which is warmer?', 'expected' => 'Paris'],
                 ],
@@ -379,7 +377,7 @@ class ConversationEvalTest extends TestCase
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }
@@ -392,7 +390,7 @@ class ConversationEvalTest extends TestCase
         $this->assertTrue($result->results[2]->passed);  // Turn 3: "Paris" in "Paris is warmer."
     }
 
-    public function testStringRepliesProduceNoAssertions(): void
+    public function testStringTurnsProduceNoAssertions(): void
     {
         $provider = $this->createScriptedProvider([
             new Response(text: 'Hi!', model: 'test'),
@@ -401,18 +399,19 @@ class ConversationEvalTest extends TestCase
 
         $dataset = Dataset::fromArray([
             [
-                'prompt' => 'Hello',
-                'expected' => 'Hi',
-                'replies' => ['How are you?'], // String — no expected values.
+                'turns' => [
+                    ['prompt' => 'Hello', 'expected' => 'Hi'],
+                    'How are you?', // String — no expected values.
+                ],
             ],
         ]);
 
-        $result = ConversationEval::create('string-replies')
+        $result = ConversationEval::create('string-turns')
             ->provider($provider)
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }
@@ -426,7 +425,7 @@ class ConversationEvalTest extends TestCase
         $this->assertSame(0, $result->results[1]->totalCount());
     }
 
-    public function testRepliesWithToolLoop(): void
+    public function testTurnsWithToolLoop(): void
     {
         $provider = $this->createScriptedProvider([
             // send: tool call + final.
@@ -451,21 +450,20 @@ class ConversationEvalTest extends TestCase
 
         $dataset = Dataset::fromArray([
             [
-                'prompt' => 'Weather in Paris?',
-                'expected' => '22',
-                'replies' => [
+                'turns' => [
+                    ['prompt' => 'Weather in Paris?', 'expected' => '22'],
                     ['prompt' => 'Now check Tokyo', 'expected' => '18'],
                 ],
             ],
         ]);
 
-        $result = ConversationEval::create('replies-tools')
+        $result = ConversationEval::create('turns-tools')
             ->provider($provider)
             ->executor($executor)
             ->withTools([['name' => 'get_weather']])
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }

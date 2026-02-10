@@ -38,7 +38,7 @@ class DatasetIntegrationTest extends TestCase
             ->provider($provider)
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }
@@ -66,7 +66,7 @@ class DatasetIntegrationTest extends TestCase
             ->provider($provider)
             ->dataset($dataset)
             ->assertions(function ($expect, $testCase): void {
-                $expected = $testCase->getExpected('default');
+                $expected = $testCase->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }

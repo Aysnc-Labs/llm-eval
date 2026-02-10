@@ -29,7 +29,7 @@ $results = LlmEval::create('quick-start')
     ->provider($provider)
     ->dataset($dataset)
     ->assertions(function ($expect, $testCase): void {
-        $expect->contains($testCase->getExpected('default'), caseSensitive: false);
+        $expect->contains($testCase->getExpected(), caseSensitive: false);
     })
     ->runAll();
 
@@ -165,23 +165,25 @@ $results = LlmEval::createConversation('math-agent')
     ->executor($executor)
     ->dataset($dataset)
     ->assertions(function ($expect, $testCase): void {
-        $expect->contains($testCase->getExpected('default'))
+        $expect->contains($testCase->getExpected())
             ->usedTool('calculate')
             ->turnCount(2);
     })
     ->runAll();
 ```
 
-### Follow-up Replies
+### Multi-Turn Datasets
 
-Add a `replies` key to your dataset rows to send follow-up messages after the initial prompt. Each reply goes through the same tool loop.
+Use a `turns` array to define multi-turn conversations. Each turn has its own `prompt` and optional `expected` values for per-turn assertions. Each turn's `TestCase` includes a `turn` metadata key (1-indexed) for turn-aware logic.
 
 ```php
 $dataset = Dataset::fromArray([
     [
-        'prompt' => 'What is the weather in Paris?',
-        'replies' => ['Now check Tokyo', 'Which city was warmer?'],
-        'expected' => 'Paris',
+        'turns' => [
+            ['prompt' => 'What is the weather in Paris?', 'expected' => '22'],
+            ['prompt' => 'Now check Tokyo', 'expected' => '18'],
+            ['prompt' => 'Which city was warmer?', 'expected' => 'Paris'],
+        ],
     ],
 ]);
 
@@ -190,9 +192,16 @@ $results = LlmEval::createConversation('multi-turn')
     ->withTools($tools)
     ->executor($executor)
     ->dataset($dataset)
-    ->assertions(function ($expect): void {
-        $expect->usedTool('get_weather')
-            ->conversationContains('Tokyo');
+    ->assertions(function ($expect, $testCase): void {
+        $expected = $testCase->getExpected();
+        if ($expected !== null) {
+            $expect->contains($expected);
+        }
+
+        // Only assert tool usage on turns that call the tool.
+        if ($testCase->metadata['turn'] <= 2) {
+            $expect->usedTool('get_weather');
+        }
     })
     ->runAll();
 ```

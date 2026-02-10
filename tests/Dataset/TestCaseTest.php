@@ -61,7 +61,7 @@ class TestCaseTest extends PHPUnitTestCase
             'expected' => '4',
         ]);
 
-        $this->assertSame('4', $testCase->getExpected('default'));
+        $this->assertSame('4', $testCase->getExpected());
     }
 
     public function testFromArrayWithExpectedPrefixedColumns(): void

@@ -40,7 +40,7 @@ class ParallelExecutionTest extends TestCase
             ->provider($provider)
             ->dataset($dataset)
             ->assertions(function ($expect, EvalTestCase $case): void {
-                $expected = $case->getExpected('default');
+                $expected = $case->getExpected();
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }

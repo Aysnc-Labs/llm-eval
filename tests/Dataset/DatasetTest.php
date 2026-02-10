@@ -22,7 +22,7 @@ class DatasetTest extends PHPUnitTestCase
 
         $cases = $dataset->toArray();
         $this->assertSame('What is 2+2?', $cases[0]->prompt);
-        $this->assertSame('4', $cases[0]->getExpected('default'));
+        $this->assertSame('4', $cases[0]->getExpected());
     }
 
     public function testFromCsvThrowsIfFileNotFound(): void
@@ -56,7 +56,7 @@ class DatasetTest extends PHPUnitTestCase
 
             $cases = $dataset->toArray();
             $this->assertSame('What is 2+2?', $cases[0]->prompt);
-            $this->assertSame('4', $cases[0]->getExpected('default'));
+            $this->assertSame('4', $cases[0]->getExpected());
         } finally {
             unlink($csvPath);
         }
