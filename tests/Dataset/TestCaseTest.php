@@ -17,9 +17,9 @@ class TestCaseTest extends PHPUnitTestCase
             metadata: ['difficulty' => 'easy'],
         );
 
-        $this->assertSame('What is 2+2?', $testCase->prompt);
-        $this->assertSame(['answer' => '4'], $testCase->expected);
-        $this->assertSame(['difficulty' => 'easy'], $testCase->metadata);
+        $this->assertSame('What is 2+2?', $testCase->getPrompt());
+        $this->assertSame(['answer' => '4'], $testCase->getData('expected'));
+        $this->assertSame('easy', $testCase->getData('difficulty'));
     }
 
     public function testGetExpected(): void
@@ -51,7 +51,7 @@ class TestCaseTest extends PHPUnitTestCase
             'prompt' => 'What is 2+2?',
         ]);
 
-        $this->assertSame('What is 2+2?', $testCase->prompt);
+        $this->assertSame('What is 2+2?', $testCase->getPrompt());
     }
 
     public function testFromArrayWithExpectedColumn(): void
@@ -76,6 +76,18 @@ class TestCaseTest extends PHPUnitTestCase
         $this->assertSame('number', $testCase->getExpected('format'));
     }
 
+    public function testFromArrayWithExpectedArray(): void
+    {
+        $testCase = TestCase::fromArray([
+            'prompt' => 'Return JSON with name and age.',
+            'expected' => ['name' => 'Alice', 'age' => '30'],
+        ]);
+
+        $this->assertSame('Alice', $testCase->getExpected('name'));
+        $this->assertSame('30', $testCase->getExpected('age'));
+        $this->assertNull($testCase->getExpected()); // No 'default' key.
+    }
+
     public function testFromArrayWithMetadata(): void
     {
         $testCase = TestCase::fromArray([
@@ -84,7 +96,7 @@ class TestCaseTest extends PHPUnitTestCase
             'difficulty' => 'easy',
         ]);
 
-        $this->assertSame('math', $testCase->metadata['category']);
-        $this->assertSame('easy', $testCase->metadata['difficulty']);
+        $this->assertSame('math', $testCase->getData('category'));
+        $this->assertSame('easy', $testCase->getData('difficulty'));
     }
 }

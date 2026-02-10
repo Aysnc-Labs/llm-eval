@@ -148,8 +148,8 @@ class ConversationEval extends LlmEval
                 $conversation->withMaxTokens($maxTokens);
             }
 
-            $caseName = is_string($testCase->metadata['name'] ?? null)
-                ? $testCase->metadata['name']
+            $caseName = is_string($testCase->getData('name'))
+                ? $testCase->getData('name')
                 : "Case {$index}";
 
             // Build turns: initial prompt + replies.
@@ -157,9 +157,9 @@ class ConversationEval extends LlmEval
 
             foreach ($turns as $turnIndex => $turnTestCase) {
                 if ($turnIndex === 0) {
-                    $response = $conversation->send($turnTestCase->prompt);
+                    $response = $conversation->send($turnTestCase->getPrompt());
                 } else {
-                    $response = $conversation->reply($turnTestCase->prompt);
+                    $response = $conversation->reply($turnTestCase->getPrompt());
                 }
 
                 $results[] = $this->buildTurnResult(
@@ -189,21 +189,20 @@ class ConversationEval extends LlmEval
      */
     private function buildTurns(TestCase $testCase): array
     {
-        $rawTurns = $testCase->metadata['turns'] ?? null;
+        $rawTurns = $testCase->getData('turns');
 
         if (! is_array($rawTurns)) {
-            return [new TestCase($testCase->prompt, $testCase->expected, [...$testCase->metadata, 'turn' => 1])];
+            return [$testCase->withTurn(1)];
         }
 
         $turns = [];
         foreach ($rawTurns as $index => $turn) {
             $turnNumber = (int) $index + 1;
             if (is_string($turn)) {
-                $turns[] = new TestCase($turn, metadata: ['turn' => $turnNumber]);
+                $turns[] = (new TestCase($turn))->withTurn($turnNumber);
             } elseif (is_array($turn)) {
                 /** @var array<string, mixed> $turn */
-                $built = TestCase::fromArray($turn);
-                $turns[] = new TestCase($built->prompt, $built->expected, [...$built->metadata, 'turn' => $turnNumber]);
+                $turns[] = TestCase::fromArray($turn)->withTurn($turnNumber);
             }
         }
 
@@ -230,7 +229,7 @@ class ConversationEval extends LlmEval
         $assertionResults = [];
         foreach ($expectation->getAssertions() as $assertion) {
             if ($assertion instanceof JudgedBy) {
-                $assertion = $assertion->withOriginalPrompt($turnTestCase->prompt);
+                $assertion = $assertion->withOriginalPrompt($turnTestCase->getPrompt());
             }
             if ($assertion instanceof ResponseAwareAssertion) {
                 $assertion = $assertion->withResponse($response);

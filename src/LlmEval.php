@@ -246,7 +246,7 @@ class LlmEval
 
         foreach ($this->dataset as $testCase) {
             // Set the prompt from the test case
-            $this->prompt = $testCase->prompt;
+            $this->prompt = $testCase->getPrompt();
 
             // Build assertions for this test case
             $expectation = new Expectation($this);
@@ -298,7 +298,7 @@ class LlmEval
         // Build promises for all test cases
         $promises = [];
         foreach ($testCases as $index => $testCase) {
-            $promises[$index] = $this->provider->completeAsync($testCase->prompt, $this->options);
+            $promises[$index] = $this->provider->completeAsync($testCase->getPrompt(), $this->options);
         }
 
         // If concurrency is limited, use pool pattern; otherwise resolve all at once
@@ -325,7 +325,7 @@ class LlmEval
             $assertionResults = [];
             foreach ($expectation->getAssertions() as $assertion) {
                 if ($assertion instanceof JudgedBy) {
-                    $assertion = $assertion->withOriginalPrompt($testCase->prompt);
+                    $assertion = $assertion->withOriginalPrompt($testCase->getPrompt());
                 }
                 if ($assertion instanceof ResponseAwareAssertion) {
                     $assertion = $assertion->withResponse($response);
@@ -334,8 +334,8 @@ class LlmEval
             }
 
             // Use metadata['name'] if set, otherwise use case index
-            $caseName = is_string($testCase->metadata['name'] ?? null)
-                ? $testCase->metadata['name']
+            $caseName = is_string($testCase->getData('name'))
+                ? $testCase->getData('name')
                 : "Case {$index}";
 
             $results[] = Result::fromAssertions(

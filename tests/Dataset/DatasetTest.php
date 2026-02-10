@@ -21,7 +21,7 @@ class DatasetTest extends PHPUnitTestCase
         $this->assertSame(2, $dataset->count());
 
         $cases = $dataset->toArray();
-        $this->assertSame('What is 2+2?', $cases[0]->prompt);
+        $this->assertSame('What is 2+2?', $cases[0]->getPrompt());
         $this->assertSame('4', $cases[0]->getExpected());
     }
 
@@ -55,7 +55,7 @@ class DatasetTest extends PHPUnitTestCase
             $this->assertSame(2, $dataset->count());
 
             $cases = $dataset->toArray();
-            $this->assertSame('What is 2+2?', $cases[0]->prompt);
+            $this->assertSame('What is 2+2?', $cases[0]->getPrompt());
             $this->assertSame('4', $cases[0]->getExpected());
         } finally {
             unlink($csvPath);
@@ -75,7 +75,7 @@ class DatasetTest extends PHPUnitTestCase
             $this->assertSame(2, $dataset->count());
 
             $cases = $dataset->toArray();
-            $this->assertSame('What is 2+2?', $cases[0]->prompt);
+            $this->assertSame('What is 2+2?', $cases[0]->getPrompt());
         } finally {
             unlink($jsonPath);
         }
@@ -91,7 +91,7 @@ class DatasetTest extends PHPUnitTestCase
         $prompts = [];
         foreach ($dataset as $testCase) {
             $this->assertInstanceOf(TestCase::class, $testCase);
-            $prompts[] = $testCase->prompt;
+            $prompts[] = $testCase->getPrompt();
         }
 
         $this->assertSame(['Test 1', 'Test 2'], $prompts);

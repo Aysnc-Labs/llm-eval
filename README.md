@@ -59,24 +59,19 @@ $dataset = Dataset::fromJson(__DIR__ . '/data/questions.json');
 
 ### Multiple Expected Values
 
-Use the `expected_` prefix to define multiple expected values per test case. Each key is accessible via `$testCase->getExpected('name')`.
+The `expected` key can be a string (single value) or an array (multiple values):
 
 ```php
-$dataset = Dataset::fromArray([
-    [
-        'prompt' => 'Return JSON with name "Alice" and age 30.',
-        'expected_name' => 'Alice',
-        'expected_age' => '30',
-    ],
-]);
+// Single expected value — accessed via $testCase->getExpected()
+['prompt' => 'What is 2+2?', 'expected' => '4']
 
-// In assertions:
-// $testCase->getExpected()       → null (no 'expected' key)
-// $testCase->getExpected('name') → 'Alice'
-// $testCase->getExpected('age')  → '30'
+// Multiple expected values — accessed via $testCase->getExpected('name'), etc.
+['prompt' => 'Return JSON with name and age.', 'expected' => ['name' => 'Alice', 'age' => '30']]
 ```
 
-Any keys that aren't `prompt`, `expected`, or `expected_*` become metadata, accessible via `$testCase->metadata['key']`.
+CSV files use column prefixes instead: `expected_name`, `expected_age` (flat format, parsed into the same array internally).
+
+Any keys that aren't `prompt` or `expected` become metadata, accessible via `$testCase->getData('key')`.
 
 ## Assertions
 
@@ -167,8 +162,7 @@ Validate that the LLM returns well-formed JSON with the right content. Combine `
 $dataset = Dataset::fromArray([
     [
         'prompt' => 'Return a JSON object with keys "name" and "age". Use name "Alice" and age 30. Only output JSON.',
-        'expected_name' => 'Alice',
-        'expected_age' => '30',
+        'expected' => ['name' => 'Alice', 'age' => '30'],
     ],
     [
         'prompt' => 'Return a JSON array of three colors: red, green, blue. Only output JSON.',
@@ -273,12 +267,12 @@ $results = LlmEval::createConversation('multi-turn')
         $expect->contains($testCase->getExpected());
 
         // Only assert tool usage on turns that call the tool.
-        if ($testCase->metadata['turn'] <= 2) {
+        if ($testCase->getTurn() <= 2) {
             $expect->usedTool('get_weather');
         }
 
         // Follow-up turns with criteria get judged for conversational coherence.
-        $criteria = $testCase->metadata['criteria'] ?? null;
+        $criteria = $testCase->getData('criteria') ?? null;
         if (is_string($criteria)) {
             $expect->judgedBy($judge, $criteria);
         }
