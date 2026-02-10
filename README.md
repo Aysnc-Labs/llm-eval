@@ -176,13 +176,21 @@ $results = LlmEval::createConversation('math-agent')
 
 Use a `turns` array to define multi-turn conversations. Each turn has its own `prompt` and optional `expected` values for per-turn assertions. Each turn's `TestCase` includes a `turn` metadata key (1-indexed) for turn-aware logic.
 
+Turns can also include a `criteria` key for LLM-as-judge evaluation on follow-up turns. When `judgedBy` is used inside a `ConversationEval`, the judge automatically receives the full conversation history, so it can evaluate whether the response correctly builds on previous turns.
+
 ```php
+$judge = new AnthropicProvider(getenv('ANTHROPIC_API_KEY'));
+
 $dataset = Dataset::fromArray([
     [
         'turns' => [
             ['prompt' => 'What is the weather in Paris?', 'expected' => '22'],
             ['prompt' => 'Now check Tokyo', 'expected' => '18'],
-            ['prompt' => 'Which city was warmer?', 'expected' => 'Paris'],
+            [
+                'prompt' => 'Which city was warmer?',
+                'expected' => 'Paris',
+                'criteria' => 'Does the response correctly identify the warmer city based on the earlier temperatures?',
+            ],
         ],
     ],
 ]);
@@ -192,12 +200,18 @@ $results = LlmEval::createConversation('multi-turn')
     ->withTools($tools)
     ->executor($executor)
     ->dataset($dataset)
-    ->assertions(function ($expect, $testCase): void {
+    ->assertions(function ($expect, $testCase) use ($judge): void {
         $expect->contains($testCase->getExpected());
 
         // Only assert tool usage on turns that call the tool.
         if ($testCase->metadata['turn'] <= 2) {
             $expect->usedTool('get_weather');
+        }
+
+        // Follow-up turns with criteria get judged for conversational coherence.
+        $criteria = $testCase->metadata['criteria'] ?? null;
+        if (is_string($criteria)) {
+            $expect->judgedBy($judge, $criteria);
         }
     })
     ->runAll();
@@ -205,7 +219,7 @@ $results = LlmEval::createConversation('multi-turn')
 
 ## LLM-as-Judge
 
-Use one LLM to evaluate another's response quality.
+Use one LLM to evaluate another's response quality. When used inside a `ConversationEval`, the judge automatically receives the full conversation history for context-aware evaluation.
 
 ```php
 $judge = new AnthropicProvider(getenv('ANTHROPIC_API_KEY'));
