@@ -1,5 +1,8 @@
 # LLM-Eval
 
+![GitHub Actions](https://github.com/Aysnc-Labs/llm-eval/actions/workflows/test.yml/badge.svg)
+![Maintenance](https://img.shields.io/badge/Actively%20Maintained-yes-green.svg)
+
 A PHP package for evaluating LLM outputs. Test your prompts, validate responses, and ensure your AI features work correctly.
 
 ## Installation
@@ -36,6 +39,44 @@ $results = LlmEval::create('quick-start')
 echo "Pass rate: {$results->passRatePercent()}\n";
 // Pass rate: 100.0%
 ```
+
+## Datasets
+
+Load test cases from arrays, CSV files, or JSON files.
+
+```php
+// Inline array
+$dataset = Dataset::fromArray([
+    ['prompt' => 'What is 2+2?', 'expected' => '4'],
+]);
+
+// CSV file (columns: prompt, expected)
+$dataset = Dataset::fromCsv(__DIR__ . '/data/capitals.csv');
+
+// JSON file (array of objects with prompt + expected keys)
+$dataset = Dataset::fromJson(__DIR__ . '/data/questions.json');
+```
+
+### Multiple Expected Values
+
+Use the `expected_` prefix to define multiple expected values per test case. Each key is accessible via `$testCase->getExpected('name')`.
+
+```php
+$dataset = Dataset::fromArray([
+    [
+        'prompt' => 'Return JSON with name "Alice" and age 30.',
+        'expected_name' => 'Alice',
+        'expected_age' => '30',
+    ],
+]);
+
+// In assertions:
+// $testCase->getExpected()       → null (no 'expected' key)
+// $testCase->getExpected('name') → 'Alice'
+// $testCase->getExpected('age')  → '30'
+```
+
+Any keys that aren't `prompt`, `expected`, or `expected_*` become metadata, accessible via `$testCase->metadata['key']`.
 
 ## Assertions
 
@@ -114,6 +155,34 @@ $results = LlmEval::create('tool-test')
     ->assertions(function ($expect): void {
         $expect->calledTool('get_weather');
         $expect->toolCallHasParam('get_weather', 'location', 'Paris');
+    })
+    ->runAll();
+```
+
+## Structured Output
+
+Validate that the LLM returns well-formed JSON with the right content. Combine `isJson()` with `contains()` or multiple expected values.
+
+```php
+$dataset = Dataset::fromArray([
+    [
+        'prompt' => 'Return a JSON object with keys "name" and "age". Use name "Alice" and age 30. Only output JSON.',
+        'expected_name' => 'Alice',
+        'expected_age' => '30',
+    ],
+    [
+        'prompt' => 'Return a JSON array of three colors: red, green, blue. Only output JSON.',
+        'expected' => 'red',
+    ],
+]);
+
+$results = LlmEval::create('json-output')
+    ->provider($provider)
+    ->dataset($dataset)
+    ->assertions(function ($expect, $testCase): void {
+        $expect->isJson()
+            ->contains($testCase->getExpected())
+            ->contains($testCase->getExpected('name'));
     })
     ->runAll();
 ```
@@ -254,6 +323,35 @@ vendor/bin/llm-eval run --parallel --concurrency=10
 
 # Clear response cache
 vendor/bin/llm-eval cache:clear
+```
+
+### Output
+
+```
+LLM-Eval Runner
+===============
+
+Running evaluations...
+
+  PASS simple - Case 0
+  PASS simple - Case 1
+  FAIL simple - Case 2
+       Got: "The sky appears blue due to Rayleigh scattering..."
+       → Text does not contain "yes"
+  PASS conversation-json - compare-two-cities - Turn 1
+  PASS conversation-json - compare-two-cities - Turn 2
+  PASS conversation-json - compare-two-cities - Turn 3
+       → Score: 100% (threshold: 70%) - The response correctly identifies Paris as the warmer city.
+  PASS llm-judge - photosynthesis
+       → Score: 95% (threshold: 70%) - Clear, accurate explanation mentioning plants and sunlight.
+
+Summary
+-------
+  Total       7
+  Passed      6
+  Failed      1
+  Pass Rate   85.7%
+  Duration    4.32s
 ```
 
 ## Providers
