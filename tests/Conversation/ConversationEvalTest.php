@@ -315,26 +315,27 @@ class ConversationEvalTest extends TestCase
         $this->assertStringContainsString('custom-name', $result->results[0]->name);
     }
 
-    public function testRepliesFromMetadata(): void
+    public function testPerTurnAssertions(): void
     {
         $provider = $this->createScriptedProvider([
-            // send('Hello')
             new Response(text: 'Hi there!', model: 'test'),
-            // reply('How are you?')
             new Response(text: 'I am great!', model: 'test'),
-            // reply('Goodbye')
             new Response(text: 'Bye!', model: 'test'),
         ]);
 
         $dataset = Dataset::fromArray([
             [
                 'prompt' => 'Hello',
-                'replies' => ['How are you?', 'Goodbye'],
-                'expected' => 'Bye',
+                'expected' => 'Hi',
+                'replies' => [
+                    ['prompt' => 'How are you?', 'expected' => 'great'],
+                    ['prompt' => 'Goodbye', 'expected' => 'Bye'],
+                ],
+                'name' => 'greeting',
             ],
         ]);
 
-        $result = ConversationEval::create('replies-test')
+        $result = ConversationEval::create('per-turn')
             ->provider($provider)
             ->executor(new CallableToolExecutor([]))
             ->dataset($dataset)
@@ -343,16 +344,86 @@ class ConversationEvalTest extends TestCase
                 if ($expected !== null) {
                     $expect->contains($expected);
                 }
-                // 3 turns: send + 2 replies.
-                $expect->turnCount(3);
-                // All messages should be in history.
-                $expect->conversationContains('Hello')
-                    ->conversationContains('How are you?')
-                    ->conversationContains('Goodbye');
             })
             ->runAll();
 
         $this->assertTrue($result->passed);
+        // 3 results: one per turn.
+        $this->assertSame(3, $result->totalCount());
+        $this->assertStringContainsString('Turn 1', $result->results[0]->name);
+        $this->assertStringContainsString('Turn 2', $result->results[1]->name);
+        $this->assertStringContainsString('Turn 3', $result->results[2]->name);
+    }
+
+    public function testPerTurnFailureIsIndependent(): void
+    {
+        $provider = $this->createScriptedProvider([
+            new Response(text: 'Paris is 22C.', model: 'test'),
+            new Response(text: 'Oops, no data.', model: 'test'), // Turn 2 fails.
+            new Response(text: 'Paris is warmer.', model: 'test'),
+        ]);
+
+        $dataset = Dataset::fromArray([
+            [
+                'prompt' => 'Paris weather',
+                'expected' => '22',
+                'replies' => [
+                    ['prompt' => 'Tokyo weather', 'expected' => '18'],
+                    ['prompt' => 'Which is warmer?', 'expected' => 'Paris'],
+                ],
+            ],
+        ]);
+
+        $result = ConversationEval::create('partial-fail')
+            ->provider($provider)
+            ->executor(new CallableToolExecutor([]))
+            ->dataset($dataset)
+            ->assertions(function ($expect, $testCase): void {
+                $expected = $testCase->getExpected('default');
+                if ($expected !== null) {
+                    $expect->contains($expected);
+                }
+            })
+            ->runAll();
+
+        $this->assertFalse($result->passed);
+        $this->assertTrue($result->results[0]->passed);  // Turn 1: "22" in "Paris is 22C."
+        $this->assertFalse($result->results[1]->passed);  // Turn 2: "18" not in "Oops, no data."
+        $this->assertTrue($result->results[2]->passed);  // Turn 3: "Paris" in "Paris is warmer."
+    }
+
+    public function testStringRepliesProduceNoAssertions(): void
+    {
+        $provider = $this->createScriptedProvider([
+            new Response(text: 'Hi!', model: 'test'),
+            new Response(text: 'Good.', model: 'test'),
+        ]);
+
+        $dataset = Dataset::fromArray([
+            [
+                'prompt' => 'Hello',
+                'expected' => 'Hi',
+                'replies' => ['How are you?'], // String — no expected values.
+            ],
+        ]);
+
+        $result = ConversationEval::create('string-replies')
+            ->provider($provider)
+            ->executor(new CallableToolExecutor([]))
+            ->dataset($dataset)
+            ->assertions(function ($expect, $testCase): void {
+                $expected = $testCase->getExpected('default');
+                if ($expected !== null) {
+                    $expect->contains($expected);
+                }
+            })
+            ->runAll();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame(2, $result->totalCount());
+        // Turn 1 has 1 assertion (contains "Hi"). Turn 2 has 0 assertions (passes trivially).
+        $this->assertSame(1, $result->results[0]->totalCount());
+        $this->assertSame(0, $result->results[1]->totalCount());
     }
 
     public function testRepliesWithToolLoop(): void
@@ -381,7 +452,10 @@ class ConversationEvalTest extends TestCase
         $dataset = Dataset::fromArray([
             [
                 'prompt' => 'Weather in Paris?',
-                'replies' => ['Now check Tokyo'],
+                'expected' => '22',
+                'replies' => [
+                    ['prompt' => 'Now check Tokyo', 'expected' => '18'],
+                ],
             ],
         ]);
 
@@ -390,14 +464,16 @@ class ConversationEvalTest extends TestCase
             ->executor($executor)
             ->withTools([['name' => 'get_weather']])
             ->dataset($dataset)
-            ->assertions(function ($expect): void {
-                $expect->contains('Tokyo')
-                    ->usedTool('get_weather')
-                    ->turnCount(4); // 2 turns per message (tool call + final) × 2 messages.
+            ->assertions(function ($expect, $testCase): void {
+                $expected = $testCase->getExpected('default');
+                if ($expected !== null) {
+                    $expect->contains($expected);
+                }
             })
             ->runAll();
 
         $this->assertTrue($result->passed);
+        $this->assertSame(2, $result->totalCount());
     }
 
     /**
