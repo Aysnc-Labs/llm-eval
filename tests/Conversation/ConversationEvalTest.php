@@ -315,6 +315,91 @@ class ConversationEvalTest extends TestCase
         $this->assertStringContainsString('custom-name', $result->results[0]->name);
     }
 
+    public function testRepliesFromMetadata(): void
+    {
+        $provider = $this->createScriptedProvider([
+            // send('Hello')
+            new Response(text: 'Hi there!', model: 'test'),
+            // reply('How are you?')
+            new Response(text: 'I am great!', model: 'test'),
+            // reply('Goodbye')
+            new Response(text: 'Bye!', model: 'test'),
+        ]);
+
+        $dataset = Dataset::fromArray([
+            [
+                'prompt' => 'Hello',
+                'replies' => ['How are you?', 'Goodbye'],
+                'expected' => 'Bye',
+            ],
+        ]);
+
+        $result = ConversationEval::create('replies-test')
+            ->provider($provider)
+            ->executor(new CallableToolExecutor([]))
+            ->dataset($dataset)
+            ->assertions(function ($expect, $testCase): void {
+                $expected = $testCase->getExpected('default');
+                if ($expected !== null) {
+                    $expect->contains($expected);
+                }
+                // 3 turns: send + 2 replies.
+                $expect->turnCount(3);
+                // All messages should be in history.
+                $expect->conversationContains('Hello')
+                    ->conversationContains('How are you?')
+                    ->conversationContains('Goodbye');
+            })
+            ->runAll();
+
+        $this->assertTrue($result->passed);
+    }
+
+    public function testRepliesWithToolLoop(): void
+    {
+        $provider = $this->createScriptedProvider([
+            // send: tool call + final.
+            new Response(
+                text: '',
+                model: 'test',
+                toolCalls: [new ToolCall('toolu_1', 'get_weather', ['location' => 'Paris'])],
+            ),
+            new Response(text: 'Paris is 22C.', model: 'test'),
+            // reply: tool call + final.
+            new Response(
+                text: '',
+                model: 'test',
+                toolCalls: [new ToolCall('toolu_2', 'get_weather', ['location' => 'Tokyo'])],
+            ),
+            new Response(text: 'Tokyo is 18C.', model: 'test'),
+        ]);
+
+        $executor = new CallableToolExecutor([
+            'get_weather' => fn (ToolCall $tc) => new ToolResult($tc->id, 'weather data'),
+        ]);
+
+        $dataset = Dataset::fromArray([
+            [
+                'prompt' => 'Weather in Paris?',
+                'replies' => ['Now check Tokyo'],
+            ],
+        ]);
+
+        $result = ConversationEval::create('replies-tools')
+            ->provider($provider)
+            ->executor($executor)
+            ->withTools([['name' => 'get_weather']])
+            ->dataset($dataset)
+            ->assertions(function ($expect): void {
+                $expect->contains('Tokyo')
+                    ->usedTool('get_weather')
+                    ->turnCount(4); // 2 turns per message (tool call + final) × 2 messages.
+            })
+            ->runAll();
+
+        $this->assertTrue($result->passed);
+    }
+
     /**
      * @param array<Response> $responses
      */

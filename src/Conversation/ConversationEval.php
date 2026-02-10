@@ -135,6 +135,16 @@ class ConversationEval extends LlmEval
 
             $response = $conversation->send($testCase->prompt);
 
+            // Send follow-up replies if the test case has them.
+            $replies = $testCase->metadata['replies'] ?? [];
+            if (is_array($replies)) {
+                foreach ($replies as $reply) {
+                    if (is_string($reply)) {
+                        $response = $conversation->reply($reply);
+                    }
+                }
+            }
+
             // Build assertions for this test case.
             $expectation = new Expectation($this);
             $assertionBuilder($expectation, $testCase);
