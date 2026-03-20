@@ -24,8 +24,8 @@ class Application extends BaseApplication
     {
         parent::__construct(self::NAME, self::VERSION);
 
-        $this->add(new RunCommand());
-        $this->add(new InitCommand());
-        $this->add(new CacheClearCommand());
+        $this->addCommand(new RunCommand());
+        $this->addCommand(new InitCommand());
+        $this->addCommand(new CacheClearCommand());
     }
 }
